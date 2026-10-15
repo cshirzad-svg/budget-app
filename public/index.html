@@ -72,6 +72,22 @@ input[type=number]{text-align:right;font-variant-numeric:tabular-nums}
 .goal b{font-variant-numeric:tabular-nums}
 .pctv{font-family:var(--display);font-weight:500;font-size:14px;font-variant-numeric:tabular-nums}
 [hidden]{display:none!important}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:4px;margin-top:-4px}
+.modes button{font:600 14px var(--body);border:0;background:none;color:var(--muted);padding:10px 6px;border-radius:10px;cursor:pointer}
+.modes button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+body.mode-simple .only-env{display:none!important}
+body:not(.mode-simple) .only-simple{display:none!important}
+body.mode-simple .amt-row,body.mode-simple .pct-row,body.mode-simple #envs .bar,body.mode-simple .goal,body.mode-simple [id^="r-"]{display:none!important}
+.total-card small{color:var(--muted);font-size:13px}
+.total-card .big{font-family:var(--display);font-weight:700;font-size:32px;line-height:1.1;font-variant-numeric:tabular-nums}
+.multi{color:var(--muted);font-size:15px;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips .chip{background:var(--soft);color:var(--ink)}
+.save-row{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.save-row:last-child{border-bottom:0}
+.save-row b{font-family:var(--display);font-weight:500;font-size:18px}
+.add .sumrow{grid-column:1/-1;display:grid;grid-template-columns:1fr 110px;gap:8px}
+.tx .s small{display:block;text-align:right;color:var(--muted);font-weight:400;font-size:12px}
 .range{flex:1;min-width:0;accent-color:var(--c);margin:0}
 .pct-row{display:flex;align-items:center;gap:10px}
 .pctv{min-width:44px;text-align:right}
@@ -141,26 +157,40 @@ body{margin:0}
 
 <div class="wrap">
   <span class="demo" id="demoBadge">Пример данных · можно очистить</span>
-  <h1>Семейный бюджет на конвертах</h1>
+  <h1 id="appTitle">Семейный бюджет на конвертах</h1>
   <p class="month" id="monthLabel"></p>
+  <div class="modes" role="group" aria-label="Режим">
+    <button type="button" data-mode="env" aria-pressed="true">💌 Конверты</button>
+    <button type="button" data-mode="simple" aria-pressed="false">🧾 Просто учёт</button>
+  </div>
 
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected="true" aria-controls="p-over" id="t-over"><span class="te">📊</span>Обзор</button>
-    <button role="tab" aria-selected="false" aria-controls="p-env" id="t-env"><span class="te">✉️</span>Конверты</button>
+    <button role="tab" aria-selected="false" aria-controls="p-env" id="t-env"><span class="te" id="tabEnvIc">✉️</span><span id="tabEnvLabel">Конверты</span></button>
     <button role="tab" aria-selected="false" aria-controls="p-tx" id="t-tx"><span class="te">🧾</span>Траты</button>
     <button role="tab" aria-selected="false" aria-controls="p-food" id="t-food"><span class="te">🍽️</span>Еда</button>
   </div>
 
   <!-- ОБЗОР -->
   <section class="panel" id="p-over" role="tabpanel">
-    <div class="mascot"><span class="face" id="face">😎</span><div><b id="moodT"></b><p id="moodP"></p></div></div>
-    <div class="kpis">
+    <div class="card only-simple total-card">
+      <small id="s-month"></small>
+      <div class="big" id="s-total"></div>
+      <div class="multi" id="s-multi"></div>
+      <div class="chips" id="s-chips"></div>
+    </div>
+    <div class="card only-simple">
+      <h2>📅 По дням</h2>
+      <div class="chart-box"><canvas id="c-days" aria-label="Траты по дням"></canvas></div>
+    </div>
+    <div class="mascot only-env"><span class="face" id="face">😎</span><div><b id="moodT"></b><p id="moodP"></p></div></div>
+    <div class="kpis only-env">
       <div class="kpi"><small>💸 Потрачено</small><b id="k-spent"></b><span class="chip" id="k-spent-chip"></span></div>
       <div class="kpi"><small>☀️ Можно в день</small><b id="k-daily"></b><span class="chip" id="k-daily-chip"></span></div>
       <div class="kpi"><small>🔮 Прогноз на месяц</small><b id="k-fore"></b><span class="chip" id="k-fore-chip"></span></div>
       <div class="kpi"><small>🐷 Отложено</small><b id="k-save"></b><span class="chip good" id="k-save-chip"></span></div>
     </div>
-    <div class="card">
+    <div class="card only-env">
       <h2>📈 Темп трат за месяц</h2>
       <p class="hint">Зелёная линия — сколько можно было потратить к этому дню. Если ваша линия ниже, вы в плюсе.</p>
       <div class="chart-box"><canvas id="c-pace" aria-label="График темпа трат"></canvas></div>
@@ -172,7 +202,12 @@ body{margin:0}
         <div class="legend" id="legend"></div>
       </div>
     </div>
-    <div class="card">
+    <div class="card only-simple">
+      <h2>🐷 Копилки</h2>
+      <p class="hint">Отложенное хранится в той валюте, в которой ты его отложил.</p>
+      <div id="s-saves"></div>
+    </div>
+    <div class="card only-env">
       <h2>⚖️ План и факт</h2>
       <div class="chart-box" style="height:280px"><canvas id="c-bars" aria-label="План и факт"></canvas></div>
     </div>
@@ -181,8 +216,13 @@ body{margin:0}
   <!-- КОНВЕРТЫ -->
   <section class="panel" id="p-env" role="tabpanel" hidden>
     <div class="card">
+      <h2>💱 Главная валюта</h2>
+      <div class="row"><label for="cur">В ней считаются итоги</label><select id="cur" aria-label="Главная валюта"></select></div>
+      <p class="hint">Траты в других валютах пересчитываются по курсу автоматически. В боте можно писать: «еда 50 ю», «кофе 4$», «такси 300 р».</p>
+    </div>
+    <div class="card only-env">
       <h2>💰 Доход и обязательные платежи</h2>
-      <div class="row"><label for="income">Доход семьи в месяц, ₽</label><input type="number" id="income" min="0" step="1000" value="70000"></div>
+      <div class="row"><label for="income">Доход семьи в месяц, <span class="cs">₽</span></label><input type="number" id="income" min="0" step="1000" value="70000"></div>
       <div class="row"><label for="rent">Жильё (аренда, ипотека, ЖКУ)</label><input type="number" id="rent" min="0" step="500" value="25000"></div>
       <div class="row"><label for="loans">Кредиты и рассрочки</label><input type="number" id="loans" min="0" step="500" value="7000"></div>
       <div class="free"><span>Остаётся на конверты</span><b id="free"></b></div>
@@ -191,8 +231,9 @@ body{margin:0}
       <button type="button" class="btn" id="fix" hidden>🪄 Выровнять до 100% автоматически</button>
     </div>
     <div class="card">
-      <h2>✉️ Конверты</h2>
-      <p class="hint">Впишите сумму в рублях или двигайте ползунок процентов, они меняются вместе. Нажмите на картинку или название, чтобы поменять их. Стрелка показывает, тратите вы больше ▲ или меньше ▼, чем к этому же дню прошлого месяца.</p>
+      <h2 id="envTitle">✉️ Конверты</h2>
+      <p class="hint only-simple">Нажми на картинку или название, чтобы поменять категорию под себя.</p>
+      <p class="hint only-env">Впишите сумму в рублях или двигайте ползунок процентов, они меняются вместе. Нажмите на картинку или название, чтобы поменять их. Стрелка показывает, тратите вы больше ▲ или меньше ▼, чем к этому же дню прошлого месяца.</p>
       <div id="envs"></div>
     </div>
   </section>
@@ -202,7 +243,7 @@ body{margin:0}
     <div class="card">
       <h2>➕ Добавить трату</h2>
       <form class="add" id="addForm">
-        <input type="number" id="a-sum" min="1" placeholder="Сумма, ₽" required>
+        <div class="sumrow"><input type="number" id="a-sum" min="0.01" step="0.01" inputmode="decimal" placeholder="Сумма" required><select id="a-cur" aria-label="Валюта"></select></div>
         <select id="a-env" aria-label="Конверт"></select>
         <input type="text" id="a-note" class="full" placeholder="На что (необязательно)">
         <button class="btn full" type="submit">Добавить ✓</button>
@@ -287,14 +328,20 @@ const SAMPLE=[[1,'food',2400,'Закупка на неделю'],[1,'safe',3800,
 const KEY='envelope-demo-v6';
 const ICONS=['🛒','🍎','🧴','🏠','🚌','🚗','⛽','🧸','👶','🎒','💊','🦷','👕','👟','🎉','🍿','☕','🎮','🐶','📱','💻','🎁','🛟','🐷','🏝️','✈️','🚘','🏡','💍','🎓','📚','💪'];
 let tx, people=4, checked={};
+const CUR={RUB:['₽','Рубли'],CNY:['¥','Юани'],USD:['$','Доллары'],EUR:['€','Евро'],KZT:['₸','Тенге'],GEL:['₾','Лари'],THB:['฿','Баты'],TRY:['₺','Лиры'],AED:['AED','Дирхамы']};
+let MODE='env', MAIN='RUB', RATES={USD:1,RUB:81,CNY:7.1,EUR:0.92,KZT:520,GEL:2.7,THB:33,TRY:41,AED:3.67};
+const YM=`${Y}-${String(M+1).padStart(2,'0')}`;
+const sym=c=>(CUR[c]||[c])[0];
+const conv=(a,from,to)=>from===to?a:(RATES[from]&&RATES[to]?a/RATES[from]*RATES[to]:null);
+const fmtC=(n,c)=>{const v=Math.abs(n)<100&&n%1?Math.round(n*100)/100:Math.round(n);return v.toLocaleString('ru-RU')+' '+sym(c)};
 const byIdEarly=id=>ENV.find(e=>e.id===id);
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s){tx=s.tx;people=s.people||4;checked=s.checked||{};ENV.forEach(e=>{if(s.a&&s.a[e.id]!=null)e.amt=s.a[e.id];if(s.n&&s.n[e.id])e.name=s.n[e.id];if(s.i&&s.i[e.id])e.ic=s.i[e.id]});if(s.target)byIdEarly('goal').target=s.target;if(s.before!=null)byIdEarly('goal').before=s.before;['income','rent','loans'].forEach(k=>{if(s[k]!=null)document.getElementById(k).value=s[k]})}}catch(e){}
+try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s){tx=s.tx;people=s.people||4;checked=s.checked||{};ENV.forEach(e=>{if(s.a&&s.a[e.id]!=null)e.amt=s.a[e.id];if(s.n&&s.n[e.id])e.name=s.n[e.id];if(s.i&&s.i[e.id])e.ic=s.i[e.id]});if(s.target)byIdEarly('goal').target=s.target;if(s.before!=null)byIdEarly('goal').before=s.before;if(s.mode)MODE=s.mode;if(s.cur)MAIN=s.cur;if(s.rates)RATES={...RATES,...s.rates};['income','rent','loans'].forEach(k=>{if(s[k]!=null)document.getElementById(k).value=s[k]})}}catch(e){}
 if(!tx)tx=SAMPLE.filter(t=>t[0]<=TODAY).map((t,i)=>({id:i+1,day:t[0],env:t[1],sum:t[2],note:t[3]}));
 const cloudSave=str=>{try{localStorage.setItem(KEY,str)}catch(e){}cloud.set(str);server.set(str)};
-const save=()=>{try{const a={},n={},i={};ENV.forEach(e=>{a[e.id]=e.amt;n[e.id]=e.name;i[e.id]=e.ic});cloudSave(JSON.stringify({tx,people,checked,a,n,i,target:byId('goal').target,before:byId('goal').before,income:val('income'),rent:val('rent'),loans:val('loans')}))}catch(e){}};
+const save=()=>{try{const a={},n={},i={};ENV.forEach(e=>{a[e.id]=e.amt;n[e.id]=e.name;i[e.id]=e.ic});cloudSave(JSON.stringify({tx,people,checked,a,n,i,mode:MODE,cur:MAIN,rates:RATES,target:byId('goal').target,before:byId('goal').before,income:val('income'),rent:val('rent'),loans:val('loans')}))}catch(e){}};
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const fmt=n=>Math.round(n).toLocaleString('ru-RU')+' ₽';
+const fmt=n=>Math.round(n).toLocaleString('ru-RU')+' '+sym(MAIN);
 const val=id=>Math.max(0,parseFloat(document.getElementById(id).value)||0);
 const byId=id=>ENV.find(e=>e.id===id);
 const toast=t=>{const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1800)};
@@ -304,15 +351,18 @@ const r10=v=>Math.round(v/10)*10;
 {const f0=Math.max(0,val('income')-val('rent')-val('loans'));ENV.forEach(e=>{if(e.amt==null)e.amt=r10(f0*e.p/100)})}
 document.getElementById('envs').innerHTML=ENV.map(e=>`<div class="env" style="--c:var(${e.c})">
  <div class="env-head"><button type="button" class="ico" id="ic-${e.id}" data-ic="${e.id}" aria-label="Сменить картинку">${e.ic}</button><input class="env-name" type="text" id="nm-${e.id}" value="${esc(e.name)}" maxlength="28" aria-label="Название конверта"><span class="pen" aria-hidden="true">✎</span></div>
- <div class="amt-row"><label for="amt-${e.id}">${e.save?'💰 Откладываю в месяц':'Выделено в месяц'}</label><div class="amt-box"><input class="amt" type="number" inputmode="numeric" id="amt-${e.id}" min="0" step="100" value="${e.amt}"><span>₽</span></div></div>
+ <div class="amt-row"><label for="amt-${e.id}">${e.save?'💰 Откладываю в месяц':'Выделено в месяц'}</label><div class="amt-box"><input class="amt" type="number" inputmode="numeric" id="amt-${e.id}" min="0" step="100" value="${e.amt}"><span class="cs">₽</span></div></div>
  <div class="picker" id="pk-${e.id}" hidden>${ICONS.map(x=>`<button type="button" data-pick="${e.id}" data-v="${x}">${x}</button>`).join('')}</div>
  <div class="pct-row"><input class="range" type="range" id="pct-${e.id}" min="0" max="100" step="1" value="0" aria-label="Доля конверта, %"><b class="pctv" id="pv-${e.id}"></b></div>
  <div class="bar" id="b-${e.id}"><i></i></div>
  <div class="env-meta"><span id="m-${e.id}"></span><span id="r-${e.id}"></span><span class="trend" id="tr-${e.id}"></span></div>
- ${e.target?`<div class="goal"><div class="row"><label for="tg">🎯 Стоимость цели, ₽</label><input type="number" id="tg" min="0" step="1000" value="${e.target}"></div>
- <div class="row"><label for="gb">🐷 Уже накоплено раньше, ₽</label><input type="number" id="gb" min="0" step="1000" value="${e.before}"></div>
+ ${e.target?`<div class="goal"><div class="row"><label for="tg">🎯 Стоимость цели, <span class="cs">₽</span></label><input type="number" id="tg" min="0" step="1000" value="${e.target}"></div>
+ <div class="row"><label for="gb">🐷 Уже накоплено раньше, <span class="cs">₽</span></label><input type="number" id="gb" min="0" step="1000" value="${e.before}"></div>
  <div class="bar" style="--c:var(${e.c})"><i id="g-bar"></i></div><div id="g-text"></div></div>`:''}</div>`).join('');
 const fillSelect=()=>{const sel=document.getElementById('a-env'),v=sel.value;const o=e=>`<option value="${e.id}">${e.ic} ${esc(e.name)}${e.target?' (цель)':''}</option>`;sel.innerHTML=`<optgroup label="💸 Траты">${ENV.filter(e=>!e.save).map(o).join('')}</optgroup><optgroup label="🐷 Отложить в копилку / на цель">${ENV.filter(e=>e.save).map(o).join('')}</optgroup>`;if(v)sel.value=v};fillSelect();
+const curOpts=Object.entries(CUR).map(([c,[s2,n]])=>`<option value="${c}">${s2} ${n}</option>`).join('');
+document.getElementById('cur').innerHTML=curOpts;document.getElementById('a-cur').innerHTML=curOpts;
+document.getElementById('cur').value=MAIN;document.getElementById('a-cur').value=MAIN;
 
 let charts={};
 function compute(){
@@ -365,9 +415,61 @@ function render(){
   // food budget line
   const food=byId('food'); document.getElementById('foodBudget').innerHTML=`В конверте «Продукты» на неделю: <b>${fmt(food.plan/4.345)}</b>`;
 
+  applyMode();renderSimple();
   drawCharts(plan,spendEnv);
   renderTx(); save();
 }
+function applyMode(){
+  const simple=MODE==='simple';
+  document.body.classList.toggle('mode-simple',simple);
+  document.querySelectorAll('.modes button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===MODE));
+  document.getElementById('appTitle').textContent=simple?'Учёт трат':'Семейный бюджет на конвертах';
+  document.getElementById('tabEnvLabel').textContent=simple?'Категории':'Конверты';
+  document.getElementById('tabEnvIc').textContent=simple?'🏷️':'✉️';
+  document.getElementById('envTitle').textContent=simple?'🏷️ Категории':'✉️ Конверты';
+  document.querySelectorAll('.cs').forEach(x=>x.textContent=sym(MAIN));
+}
+function renderSimple(){
+  if(MODE!=='simple')return;
+  const mon=tx.filter(t=>(t.m||YM)===YM), isSave=t=>byId(t.env)?.save;
+  const spentT=mon.filter(t=>!isSave(t)), spent=spentT.reduce((a,t)=>a+t.sum,0);
+  document.getElementById('s-month').textContent=`💸 Потрачено за ${MONTHS[M]}`;
+  document.getElementById('s-total').textContent=fmtC(spent,MAIN);
+  document.getElementById('s-multi').textContent=[...new Set(['CNY','USD','RUB'])].filter(c=>c!==MAIN).map(c=>{const v=conv(spent,MAIN,c);return v==null?'':'≈ '+fmtC(v,c)}).filter(Boolean).join('   ');
+  const daysWith=new Set(spentT.map(t=>t.day)), noSpend=[...Array(TODAY)].filter((_,i)=>!daysWith.has(i+1)).length;
+  const lastSame=ENV.filter(e=>!e.save).reduce((a,e)=>a+(conv(e.last,'RUB',MAIN)||0),0)*TODAY/DAYS;
+  const d=lastSame?Math.round((spent-lastSame)/lastSame*100):0;
+  const topE=ENV.filter(e=>!e.save).map(e=>[e,spentT.filter(t=>t.env===e.id).reduce((a,t)=>a+t.sum,0)]).sort((a,b)=>b[1]-a[1])[0];
+  document.getElementById('s-chips').innerHTML=[
+    `📆 в день ~${fmtC(spent/Math.max(1,TODAY),MAIN)}`,
+    `🧘 дней без трат: ${noSpend}`,
+    d>0?`<span style="color:var(--bad)">▲ +${d}% к прошлому месяцу</span>`:`<span style="color:var(--good)">▼ ${d}% к прошлому месяцу</span>`,
+    topE&&topE[1]?`🏆 больше всего: ${topE[0].ic} ${esc(topE[0].name)}`:''
+  ].filter(Boolean).map(x=>`<span class="chip">${x}</span>`).join('');
+  const by={};mon.filter(isSave).forEach(t=>{const c=t.cur||MAIN;by[c]=(by[c]||0)+(t.orig??t.sum)});
+  const rows=Object.entries(by);
+  const total=rows.reduce((a,[c,v])=>a+(conv(v,c,MAIN)||0),0);
+  document.getElementById('s-saves').innerHTML=rows.length?rows.map(([c,v])=>`<div class="save-row"><span>${CUR[c]?CUR[c][1]:c}</span><b>${fmtC(v,c)}</b></div>`).join('')+(rows.length>1||rows[0][0]!==MAIN?`<div class="save-row"><span>Всего ≈</span><b>${fmtC(total,MAIN)}</b></div>`:''):'<p class="hint">Пока ничего не отложено. Напиши боту: «отложил 5к юаней» 🐷</p>';
+  if(window.Chart){
+    const labels=[...Array(DAYS)].map((_,i)=>i+1), acc=css('--accent'), line=css('--line');
+    const data=labels.map(dd=>dd>TODAY?null:spentT.filter(t=>t.day===dd).reduce((a,t)=>a+t.sum,0));
+    upsert('c-days','bar',{labels,datasets:[{label:'Потрачено',data,backgroundColor:labels.map(dd=>dd===TODAY?acc:acc+'88'),borderRadius:4}]},
+      {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:i=>i[0].label+' '+MONTHS[M].slice(0,3),label:i=>' '+fmtC(i.raw,MAIN)}}},
+       scales:{x:{grid:{display:false},ticks:{maxTicksLimit:10}},y:{grid:{color:line},ticks:{callback:v=>v>=1000?(v/1000)+'к':v}}}});
+  }
+}
+function setMain(nc){
+  const old=MAIN;if(nc===old)return;
+  if(conv(1,old,nc)==null){toast('😕 Нет курса для этой валюты');document.getElementById('cur').value=old;return}
+  tx.forEach(t=>{if(!t.cur){t.cur=old;t.orig=t.sum}t.sum=Math.round(conv(t.orig,t.cur,nc))});
+  ENV.forEach(e=>{const el=document.getElementById('amt-'+e.id);el.value=Math.round(conv(val('amt-'+e.id),old,nc))});
+  ['income','rent','loans','tg','gb'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=Math.round(conv(val(id),old,nc))});
+  const g=byId('goal');g.before=val('gb');g.target=val('tg');
+  MAIN=nc;document.getElementById('a-cur').value=nc;render();toast(`💱 Итоги теперь в: ${CUR[nc][1].toLowerCase()}`);
+}
+document.getElementById('cur').addEventListener('change',e=>setMain(e.target.value));
+document.querySelector('.modes').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b||b.dataset.mode===MODE)return;MODE=b.dataset.mode;render();toast(MODE==='simple'?'🧾 Режим «Просто учёт»: пиши траты, я посчитаю':'💌 Режим «Конверты»: планируй и контролируй')});
+if(useServer)fetch('/api/rates').then(r=>r.json()).then(j=>{if(j&&j.ok&&j.rates){RATES={...RATES,...j.rates};render()}}).catch(()=>{});
 function drawCharts(plan,spendEnv){
   if(!window.Chart)return;
   const ink=css('--muted'), line=css('--line'), acc=css('--accent'), good=css('--good');
@@ -402,7 +504,7 @@ function upsert(id,type,data,options){
 }
 function renderTx(){
   const list=[...tx].sort((a,b)=>b.day-a.day||b.id-a.id);
-  document.getElementById('txList').innerHTML=list.length?list.map(t=>{const e=byId(t.env);return `<div class="tx"><span class="d">${t.day} ${MONTHS[M].slice(0,3)}</span><span class="em" style="--c:var(${e.c})">${e.ic}</span><span class="n">${esc(t.note||e.name)}<small>${esc(e.name)}</small></span><span class="s">−${fmt(t.sum)}</span><button type="button" data-del="${t.id}" aria-label="Удалить">×</button></div>`}).join(''):'<p class="hint">🧾 Пока трат нет. Добавьте первую выше.</p>';
+  document.getElementById('txList').innerHTML=list.length?list.map(t=>{const e=byId(t.env);return `<div class="tx"><span class="d">${t.day} ${MONTHS[M].slice(0,3)}</span><span class="em" style="--c:var(${e.c})">${e.ic}</span><span class="n">${esc(t.note||e.name)}<small>${esc(e.name)}</small></span><span class="s">−${t.cur&&t.cur!==MAIN?fmtC(t.orig,t.cur)+`<small>≈ ${fmt(t.sum)}</small>`:fmt(t.sum)}</span><button type="button" data-del="${t.id}" aria-label="Удалить">×</button></div>`}).join(''):'<p class="hint">🧾 Пока трат нет. Добавьте первую выше.</p>';
 }
 function burst(list,x,y){haptic('ok');if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;x=x??innerWidth/2;y=y??innerHeight*0.6;
   for(let k=0;k<16;k++){const sp=document.createElement('span');sp.className='burst';sp.textContent=list[k%list.length];
@@ -415,12 +517,15 @@ document.getElementById('envs').addEventListener('click',e=>{
 });
 document.getElementById('txList').addEventListener('click',e=>{const id=+e.target.dataset.del;if(!id)return;deletedIds.push(id);tx=tx.filter(t=>t.id!==id);render();toast('🗑️ Трата удалена')});
 document.getElementById('addForm').addEventListener('submit',e=>{
-  e.preventDefault();const sum=val('a-sum');if(!sum)return;
-  const env=document.getElementById('a-env').value;
-  tx.push({id:Date.now(),day:TODAY,env,sum,note:document.getElementById('a-note').value.trim()});
+  e.preventDefault();const orig=val('a-sum');if(!orig)return;
+  const env=document.getElementById('a-env').value, cur=document.getElementById('a-cur').value;
+  const base=conv(orig,cur,MAIN);if(base==null){toast('😕 Нет курса для этой валюты');return}
+  const sum=Math.round(base), usd=conv(orig,cur,'USD');
+  tx.push({id:Date.now(),day:TODAY,m:YM,env,sum,orig,cur,usd:usd==null?null:Math.round(usd*100)/100,note:document.getElementById('a-note').value.trim()});
   document.getElementById('a-sum').value='';document.getElementById('a-note').value='';
   render();const en=byId(env);const left=en.plan-en.spent;
-  if(en.save){toast(`🐷 Отложено ${fmt(sum)}. Так держать!`);burst(['🪙','💰','🐷','✨'])}
+  if(en.save){toast(`🐷 Отложено ${fmtC(orig,cur)}. Так держать!`);burst(['🪙','💰','🐷','✨'])}
+  else if(MODE==='simple'){toast(`${en.ic} −${fmtC(orig,cur)} → «${en.name}»`);burst([en.ic,'✨'])}
   else if(left<0){toast(`😬 Перерасход в «${en.name}»: ${fmt(-left)}`)}
   else{toast(`${en.ic} Осталось в «${en.name}»: ${fmt(left)}`);burst([en.ic,'✨'])}
 });
