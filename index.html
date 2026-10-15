@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Бюджет на конвертах</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Onest:wght@400;500;600;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Layout: phone-first single column, tab bar on top: Обзор (charts) → Конверты → Траты → Еда */
+:root{
+  --bg:#f3f5f9; --paper:#ffffff; --ink:#1e2433; --muted:#6c7488; --line:#e2e6ee; --soft:#eef1f6;
+  --accent:#2a9d8f; --accent-soft:#dff3f0;
+  --good:#2f9e6a; --good-soft:#e1f4ea; --bad:#e0644f; --bad-soft:#fbe7e3;
+  --e1:#2a9d8f; --e2:#7b8ce0; --e3:#f2a541; --e4:#ef7fa4; --e5:#4fb3d9; --e6:#a98be0; --e7:#f08a6c; --e8:#7cc576; --e9:#5f7fa3;
+  --display:"Unbounded","Arial Black",system-ui,sans-serif;
+  --body:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12151d; --paper:#1b1f2a; --ink:#e8ebf2; --muted:#9aa2b6; --line:#2a3040; --soft:#232836;
+  --accent:#4cc4b5; --accent-soft:#183531; --good:#5ccf94; --good-soft:#173326; --bad:#ff8a74; --bad-soft:#3a1f1a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12151d; --paper:#1b1f2a; --ink:#e8ebf2; --muted:#9aa2b6; --line:#2a3040; --soft:#232836;
+  --accent:#4cc4b5; --accent-soft:#183531; --good:#5ccf94; --good-soft:#173326; --bad:#ff8a74; --bad-soft:#3a1f1a; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
+.wrap{max-width:600px;margin:0 auto;padding-block:18px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+.demo{align-self:flex-start;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:4px 10px;border-radius:99px}
+h1{font-family:var(--display);font-weight:700;font-size:24px;line-height:1.15;margin:0;text-wrap:balance}
+.month{color:var(--muted);margin:-8px 0 0}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:4px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.tabs button{font:600 13px var(--body);border:0;background:none;color:var(--muted);padding:10px 4px;border-radius:10px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accent);color:#fff}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.panel{display:flex;flex-direction:column;gap:14px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card h2{font-family:var(--display);font-weight:500;font-size:15px;margin:0}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kpi{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.kpi small{font-size:12px;color:var(--muted)}
+.kpi b{font-family:var(--display);font-size:19px;font-weight:500;font-variant-numeric:tabular-nums}
+.chip{align-self:flex-start;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;font-variant-numeric:tabular-nums}
+.chip.good{background:var(--good-soft);color:var(--good)} .chip.bad{background:var(--bad-soft);color:var(--bad)}
+.chart-box{position:relative;height:220px}
+.donut-wrap{display:grid;grid-template-columns:160px 1fr;gap:14px;align-items:center}
+.donut-wrap .chart-box{height:160px}
+.legend{display:flex;flex-direction:column;gap:5px;font-size:13px;min-width:0}
+.legend div{display:flex;align-items:center;gap:8px}
+.legend i{width:10px;height:10px;border-radius:3px;flex:none}
+.legend span:last-child{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+.row{display:grid;grid-template-columns:1fr 130px;gap:10px;align-items:center}
+.row label{color:var(--muted);font-size:14px}
+input[type=number],input[type=text],select{width:100%;box-sizing:border-box;font:500 15px var(--body);color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:9px 10px}
+input[type=number]{text-align:right;font-variant-numeric:tabular-nums}
+.free{display:flex;justify-content:space-between;align-items:baseline;border-top:1px dashed var(--line);padding-top:12px}
+.free b{font-family:var(--display);font-size:20px;font-variant-numeric:tabular-nums}
+.status{font-size:13px;padding:8px 12px;border-radius:10px;background:var(--good-soft);color:var(--good)}
+.status.bad{background:var(--bad-soft);color:var(--bad)}
+.env{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid var(--line)}
+.env:last-child{border-bottom:0;padding-bottom:0}
+.env-head{display:flex;align-items:center;gap:10px}
+.dot{width:12px;height:12px;border-radius:4px;background:var(--c);flex:none}
+.env-name{font:600 15px var(--body);flex:1;min-width:0;color:var(--ink);background:transparent;border:1px dashed transparent;border-radius:8px;padding:4px 6px;margin-left:-6px}
+.env-name:hover{border-color:var(--line)} .env-name:focus{background:var(--soft);border-color:var(--accent);outline:none}
+.pen{color:var(--muted);font-size:13px;flex:none}
+.goal{background:var(--soft);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.goal .row{grid-template-columns:1fr 120px}
+.goal b{font-variant-numeric:tabular-nums}
+.pctv{font-family:var(--display);font-weight:500;font-size:14px;font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+.range{flex:1;min-width:0;accent-color:var(--c);margin:0}
+.pct-row{display:flex;align-items:center;gap:10px}
+.pctv{min-width:44px;text-align:right}
+.amt-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--muted)}
+.amt-box{display:flex;align-items:center;gap:6px;color:var(--ink);font-weight:600}
+.amt-box input{width:120px!important;padding:7px 10px!important}
+.env-meta{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.bar{height:10px;background:var(--soft);border-radius:99px;overflow:hidden;position:relative}
+.bar i{display:block;height:100%;background:var(--c);border-radius:99px;transition:width .4s}
+.bar.over i{background:var(--bad)}
+.trend{font-weight:600}
+.trend.up{color:var(--bad)} .trend.down{color:var(--good)}
+.add{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.add .full{grid-column:1/-1}
+.btn{font:600 15px var(--body);border:0;border-radius:12px;padding:12px;background:var(--accent);color:#fff;cursor:pointer}
+.btn:active{transform:scale(.98)}
+.tx{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+.tx:last-child{border-bottom:0}
+.tx .d{color:var(--muted);width:42px;font-variant-numeric:tabular-nums;flex:none}
+.tx .n{flex:1;min-width:0}
+.tx .n small{display:block;color:var(--muted);font-size:12px}
+.tx .s{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tx button{border:0;background:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);opacity:0;background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:14px;transition:.3s;pointer-events:none;z-index:20}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.why{background:var(--accent-soft);color:var(--ink);border-radius:14px;padding:14px;font-size:14px;display:flex;flex-direction:column;gap:6px}
+.why b{color:var(--accent)}
+.stepper{display:flex;align-items:center;gap:10px}
+.stepper button{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:18px;cursor:pointer}
+.stepper b{font-family:var(--display);font-size:18px;min-width:20px;text-align:center}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.days button{font:600 13px var(--body);padding:8px 0;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--muted);cursor:pointer}
+.days button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.meal{display:grid;grid-template-columns:76px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.meal:last-child{border-bottom:0}
+.meal span{color:var(--muted);font-size:13px}
+.prog{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.shop{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 14px;font-size:14px}
+.shop label{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+.shop input{accent-color:var(--accent);margin-top:4px;width:16px;height:16px}
+.shop input:checked+span{text-decoration:line-through;color:var(--muted)}
+.cat{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;grid-column:1/-1;margin-top:6px}
+.tabs button{display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.2}
+.tabs .te{font-size:18px}
+.ico{width:34px;height:34px;flex:none;border-radius:11px;border:0;cursor:pointer;font-size:18px;display:grid;place-items:center;background:var(--soft);background:color-mix(in srgb,var(--c) 22%,transparent);transition:transform .15s}
+.ico:active{transform:scale(.9)}
+.picker{display:flex;flex-wrap:wrap;gap:4px;background:var(--soft);border-radius:12px;padding:8px}
+.picker button{font-size:20px;width:38px;height:38px;border:0;border-radius:10px;background:var(--paper);cursor:pointer}
+.tx .em{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:16px;flex:none;background:var(--soft);background:color-mix(in srgb,var(--c) 22%,transparent)}
+.mascot{display:flex;align-items:center;gap:14px;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+.mascot .face{font-size:46px;line-height:1;flex:none}
+.mascot .face.pop{animation:pop .5s ease}
+.mascot b{font-family:var(--display);font-weight:500;font-size:16px;display:block}
+.mascot p{margin:2px 0 0;color:var(--muted);font-size:14px}
+@keyframes pop{0%{transform:scale(.6) rotate(-10deg)}60%{transform:scale(1.15) rotate(6deg)}100%{transform:scale(1)}}
+.burst{position:fixed;pointer-events:none;font-size:26px;z-index:30;animation:fly 1.1s ease-out forwards}
+@keyframes fly{0%{opacity:1;transform:translate(0,0) scale(.6)}100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(1.2) rotate(var(--rot))}}
+@media (prefers-reduced-motion:reduce){.burst,.mascot .face.pop{animation:none;display:none}}
+@media (max-width:420px){.donut-wrap{grid-template-columns:1fr}.donut-wrap .chart-box{height:170px}}
+@media (prefers-reduced-motion:reduce){.bar i,.toast{transition:none}}
+body{margin:0}
+*{-webkit-tap-highlight-color:transparent}
+.clear{background:var(--soft)!important;color:var(--ink)!important;border:1px solid var(--line)!important}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <span class="demo" id="demoBadge">Пример данных · можно очистить</span>
+  <h1>Семейный бюджет на конвертах</h1>
+  <p class="month" id="monthLabel"></p>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" aria-controls="p-over" id="t-over"><span class="te">📊</span>Обзор</button>
+    <button role="tab" aria-selected="false" aria-controls="p-env" id="t-env"><span class="te">✉️</span>Конверты</button>
+    <button role="tab" aria-selected="false" aria-controls="p-tx" id="t-tx"><span class="te">🧾</span>Траты</button>
+    <button role="tab" aria-selected="false" aria-controls="p-food" id="t-food"><span class="te">🍽️</span>Еда</button>
+  </div>
+
+  <!-- ОБЗОР -->
+  <section class="panel" id="p-over" role="tabpanel">
+    <div class="mascot"><span class="face" id="face">😎</span><div><b id="moodT"></b><p id="moodP"></p></div></div>
+    <div class="kpis">
+      <div class="kpi"><small>💸 Потрачено</small><b id="k-spent"></b><span class="chip" id="k-spent-chip"></span></div>
+      <div class="kpi"><small>☀️ Можно в день</small><b id="k-daily"></b><span class="chip" id="k-daily-chip"></span></div>
+      <div class="kpi"><small>🔮 Прогноз на месяц</small><b id="k-fore"></b><span class="chip" id="k-fore-chip"></span></div>
+      <div class="kpi"><small>🐷 Отложено</small><b id="k-save"></b><span class="chip good" id="k-save-chip"></span></div>
+    </div>
+    <div class="card">
+      <h2>📈 Темп трат за месяц</h2>
+      <p class="hint">Зелёная линия — сколько можно было потратить к этому дню. Если ваша линия ниже, вы в плюсе.</p>
+      <div class="chart-box"><canvas id="c-pace" aria-label="График темпа трат"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>🍩 Куда уходят деньги</h2>
+      <div class="donut-wrap">
+        <div class="chart-box"><canvas id="c-donut" aria-label="Распределение трат"></canvas></div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>⚖️ План и факт</h2>
+      <div class="chart-box" style="height:280px"><canvas id="c-bars" aria-label="План и факт"></canvas></div>
+    </div>
+  </section>
+
+  <!-- КОНВЕРТЫ -->
+  <section class="panel" id="p-env" role="tabpanel" hidden>
+    <div class="card">
+      <h2>💰 Доход и обязательные платежи</h2>
+      <div class="row"><label for="income">Доход семьи в месяц, ₽</label><input type="number" id="income" min="0" step="1000" value="70000"></div>
+      <div class="row"><label for="rent">Жильё (аренда, ипотека, ЖКУ)</label><input type="number" id="rent" min="0" step="500" value="25000"></div>
+      <div class="row"><label for="loans">Кредиты и рассрочки</label><input type="number" id="loans" min="0" step="500" value="7000"></div>
+      <div class="free"><span>Остаётся на конверты</span><b id="free"></b></div>
+      <div class="status" id="status"></div>
+      <button type="button" class="btn clear" id="clearEx">🧹 Очистить пример и начать со своими цифрами</button>
+      <button type="button" class="btn" id="fix" hidden>🪄 Выровнять до 100% автоматически</button>
+    </div>
+    <div class="card">
+      <h2>✉️ Конверты</h2>
+      <p class="hint">Впишите сумму в рублях или двигайте ползунок процентов, они меняются вместе. Нажмите на картинку или название, чтобы поменять их. Стрелка показывает, тратите вы больше ▲ или меньше ▼, чем к этому же дню прошлого месяца.</p>
+      <div id="envs"></div>
+    </div>
+  </section>
+
+  <!-- ТРАТЫ -->
+  <section class="panel" id="p-tx" role="tabpanel" hidden>
+    <div class="card">
+      <h2>➕ Добавить трату</h2>
+      <form class="add" id="addForm">
+        <input type="number" id="a-sum" min="1" placeholder="Сумма, ₽" required>
+        <select id="a-env" aria-label="Конверт"></select>
+        <input type="text" id="a-note" class="full" placeholder="На что (необязательно)">
+        <button class="btn full" type="submit">Добавить ✓</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>🧾 Траты этого месяца</h2>
+      <div id="txList"></div>
+    </div>
+  </section>
+
+  <!-- ЕДА -->
+  <section class="panel" id="p-food" role="tabpanel" hidden>
+    <div class="why">
+      <div><b>💡 Как это экономит деньги:</b> вы заранее знаете, что готовить всю неделю, и идёте в магазин один раз по готовому списку. Без лишних покупок и без «нечего есть, закажем доставку».</div>
+      <div id="foodBudget"></div>
+    </div>
+    <div class="card">
+      <h2>👨‍👩‍👧‍👦 Сколько вас в семье</h2>
+      <div class="stepper"><button type="button" id="pMinus" aria-label="Меньше">−</button><b id="people">4</b><button type="button" id="pPlus" aria-label="Больше">+</button><span class="hint">Список покупок пересчитается сам</span></div>
+    </div>
+    <div class="card">
+      <h2>🍳 Что готовить</h2>
+      <div class="days" id="days"></div>
+      <div id="meals"></div>
+    </div>
+    <div class="card">
+      <h2>🛒 Список покупок на неделю</h2>
+      <div class="prog"><span id="shopProg"></span><span>отмечайте прямо в магазине</span></div>
+      <div class="bar" style="--c:var(--accent)"><i id="shopBar"></i></div>
+      <div class="shop" id="shop"></div>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+
+<script>
+const tg=window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData!==undefined?Telegram.WebApp:null;
+const inTG=!!(tg&&tg.platform&&tg.platform!=='unknown');
+const SKEY='envelope-demo-v6';
+const haptic=(t)=>{try{if(!inTG)return;if(t==='ok')tg.HapticFeedback.notificationOccurred('success');else tg.HapticFeedback.impactOccurred('light')}catch(e){}};
+/* Cloud storage: split JSON into 3500-char chunks */
+const cloud={
+  get(cb){if(!inTG||!tg.CloudStorage)return cb(null);
+    tg.CloudStorage.getItem('n',(e,n)=>{n=+n||0;if(e||!n)return cb(null);
+      const keys=[...Array(n)].map((_,i)=>'c'+i);
+      tg.CloudStorage.getItems(keys,(e2,v)=>{if(e2||!v)return cb(null);cb(keys.map(k=>v[k]||'').join(''))})})},
+  t:null,
+  set(str){if(!inTG||!tg.CloudStorage)return;clearTimeout(this.t);this.t=setTimeout(()=>{
+    const parts=str.match(/[\s\S]{1,3500}/g)||[''];parts.forEach((p,i)=>tg.CloudStorage.setItem('c'+i,p));tg.CloudStorage.setItem('n',String(parts.length))},800)}
+};
+function boot(){
+  if(inTG){try{tg.ready();tg.expand();document.documentElement.setAttribute('data-theme',tg.colorScheme==='dark'?'dark':'light');
+    tg.onEvent('themeChanged',()=>document.documentElement.setAttribute('data-theme',tg.colorScheme==='dark'?'dark':'light'));
+    try{tg.setHeaderColor(tg.colorScheme==='dark'?'#12151d':'#f3f5f9');tg.setBackgroundColor(tg.colorScheme==='dark'?'#12151d':'#f3f5f9')}catch(e){}}catch(e){}}
+  cloud.get(str=>{if(str){try{localStorage.setItem(SKEY,str)}catch(e){}}main()});
+}
+document.addEventListener('click',e=>{if(e.target.closest('button,[role=tab],label'))haptic()});
+function main(){
+const now=new Date(), Y=now.getFullYear(), M=now.getMonth(), TODAY=now.getDate(), DAYS=new Date(Y,M+1,0).getDate();
+const MONTHS=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+document.getElementById('monthLabel').textContent=`${MONTHS[M][0].toUpperCase()+MONTHS[M].slice(1)} ${Y} · сегодня ${TODAY}-е, до конца месяца ${DAYS-TODAY} дн.`;
+const ENV=[
+ {id:'food',ic:'🛒',name:'Продукты',c:'--e1',p:35,last:14200},
+ {id:'home',ic:'🧴',name:'Быт и химия',c:'--e2',p:8,last:2600},
+ {id:'transport',ic:'🚌',name:'Транспорт',c:'--e3',p:10,last:3900},
+ {id:'kids',ic:'🧸',name:'Дети',c:'--e4',p:12,last:5100},
+ {id:'health',ic:'💊',name:'Здоровье',c:'--e5',p:5,last:900},
+ {id:'clothes',ic:'👕',name:'Одежда',c:'--e6',p:5,last:1200},
+ {id:'fun',ic:'🎉',name:'Отдых и кафе',c:'--e7',p:5,last:2900},
+ {id:'safe',ic:'🛟',name:'Подушка',c:'--e8',p:10,last:3800,save:true},
+ {id:'goal',ic:'🏝️',name:'Отпуск',c:'--e9',p:10,last:3800,save:true,target:90000,before:22000}
+];
+const SAMPLE=[[1,'food',2400,'Закупка на неделю'],[1,'safe',3800,'Перевод в копилку'],[1,'goal',3800,'Перевод в копилку'],[2,'transport',1500,'Проездной'],[3,'kids',1200,'Кружок рисования'],[4,'food',850,'🥕 Овощи и фрукты'],[5,'fun',700,'Кино'],[6,'home',900,'Бытовая химия'],[7,'food',2100,'Закупка на неделю'],[8,'clothes',2400,'Ботинки ребёнку'],[9,'kids',2600,'Оплата садика'],[10,'food',600,'Молоко, хлеб'],[11,'fun',450,'Кофе'],[12,'food',1950,'Закупка на неделю'],[13,'health',650,'Аптека'],[14,'food',700,'Фрукты'],[15,'transport',300,'Такси']];
+const KEY='envelope-demo-v6';
+const ICONS=['🛒','🍎','🧴','🏠','🚌','🚗','⛽','🧸','👶','🎒','💊','🦷','👕','👟','🎉','🍿','☕','🎮','🐶','📱','💻','🎁','🛟','🐷','🏝️','✈️','🚘','🏡','💍','🎓','📚','💪'];
+let tx, people=4, checked={};
+const byIdEarly=id=>ENV.find(e=>e.id===id);
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s){tx=s.tx;people=s.people||4;checked=s.checked||{};ENV.forEach(e=>{if(s.a&&s.a[e.id]!=null)e.amt=s.a[e.id];if(s.n&&s.n[e.id])e.name=s.n[e.id];if(s.i&&s.i[e.id])e.ic=s.i[e.id]});if(s.target)byIdEarly('goal').target=s.target;['income','rent','loans'].forEach(k=>{if(s[k]!=null)document.getElementById(k).value=s[k]})}}catch(e){}
+if(!tx)tx=SAMPLE.filter(t=>t[0]<=TODAY).map((t,i)=>({id:i+1,day:t[0],env:t[1],sum:t[2],note:t[3]}));
+const cloudSave=str=>{try{localStorage.setItem(KEY,str)}catch(e){}cloud.set(str)};
+const save=()=>{try{const a={},n={},i={};ENV.forEach(e=>{a[e.id]=e.amt;n[e.id]=e.name;i[e.id]=e.ic});cloudSave(JSON.stringify({tx,people,checked,a,n,i,target:byId('goal').target,income:val('income'),rent:val('rent'),loans:val('loans')}))}catch(e){}};
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt=n=>Math.round(n).toLocaleString('ru-RU')+' ₽';
+const val=id=>Math.max(0,parseFloat(document.getElementById(id).value)||0);
+const byId=id=>ENV.find(e=>e.id===id);
+const toast=t=>{const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1800)};
+
+/* envelopes list */
+const r10=v=>Math.round(v/10)*10;
+{const f0=Math.max(0,val('income')-val('rent')-val('loans'));ENV.forEach(e=>{if(e.amt==null)e.amt=r10(f0*e.p/100)})}
+document.getElementById('envs').innerHTML=ENV.map(e=>`<div class="env" style="--c:var(${e.c})">
+ <div class="env-head"><button type="button" class="ico" id="ic-${e.id}" data-ic="${e.id}" aria-label="Сменить картинку">${e.ic}</button><input class="env-name" type="text" id="nm-${e.id}" value="${esc(e.name)}" maxlength="28" aria-label="Название конверта"><span class="pen" aria-hidden="true">✎</span></div>
+ <div class="amt-row"><label for="amt-${e.id}">Выделено в месяц</label><div class="amt-box"><input class="amt" type="number" inputmode="numeric" id="amt-${e.id}" min="0" step="100" value="${e.amt}"><span>₽</span></div></div>
+ <div class="picker" id="pk-${e.id}" hidden>${ICONS.map(x=>`<button type="button" data-pick="${e.id}" data-v="${x}">${x}</button>`).join('')}</div>
+ <div class="pct-row"><input class="range" type="range" id="pct-${e.id}" min="0" max="100" step="1" value="0" aria-label="Доля конверта, %"><b class="pctv" id="pv-${e.id}"></b></div>
+ <div class="bar" id="b-${e.id}"><i></i></div>
+ <div class="env-meta"><span id="m-${e.id}"></span><span id="r-${e.id}"></span><span class="trend" id="tr-${e.id}"></span></div>
+ ${e.target?`<div class="goal"><div class="row"><label for="tg">Сколько нужно на цель, ₽</label><input type="number" id="tg" min="0" step="1000" value="${e.target}"></div>
+ <div class="bar" style="--c:var(${e.c})"><i id="g-bar"></i></div><div id="g-text"></div></div>`:''}</div>`).join('');
+const fillSelect=()=>{const sel=document.getElementById('a-env'),v=sel.value;sel.innerHTML=ENV.map(e=>`<option value="${e.id}">${e.ic} ${esc(e.name)}</option>`).join('');if(v)sel.value=v};fillSelect();
+
+let charts={};
+function compute(){
+  const free=Math.max(0,val('income')-val('rent')-val('loans'));
+  ENV.forEach(e=>{e.amt=val('amt-'+e.id);e.plan=e.amt;e.p=free?e.amt/free*100:0;const pv=document.getElementById('pv-'+e.id);pv.textContent=(e.p<10&&e.p%1?e.p.toFixed(1):Math.round(e.p))+'%';const sl=document.getElementById('pct-'+e.id);if(document.activeElement!==sl)sl.value=Math.min(100,Math.round(e.p));e.spent=tx.filter(t=>t.env===e.id).reduce((a,t)=>a+t.sum,0)});
+  return free;
+}
+function render(){
+  const free=compute(), totA=ENV.reduce((a,e)=>a+e.amt,0), dA=totA-free, tot=free?Math.round(totA/free*100):0;
+  document.getElementById('free').textContent=fmt(free);
+  const st=document.getElementById('status');
+  if(free<=0){st.className='status bad';st.textContent='Обязательные платежи съедают весь доход. Начните с кредитов.'}
+  else if(dA>=1){st.className='status bad';st.innerHTML=`🙈 Вы раздали по конвертам <b>${fmt(totA)}</b>, а свободно только ${fmt(free)}. Лишние <b>${fmt(dA)}</b> (${tot}% вместо 100%). Уменьшите суммы или нажмите кнопку ниже.`}
+  else if(dA<=-1){st.className='status bad';st.innerHTML=`🤔 Не распределено <b>${fmt(-dA)}</b> — эти деньги пока без конверта. Добавьте их куда-нибудь (например, в копилку 🐷) или нажмите кнопку ниже.`}
+  else{st.className='status';st.textContent='✅ Все деньги распределены по конвертам: ровно 100%.'}
+  document.getElementById('fix').hidden=(Math.abs(dA)<1||free<=0);
+
+  ENV.forEach(e=>{
+    const left=e.plan-e.spent, used=e.plan?Math.min(100,e.spent/e.plan*100):(e.spent?100:0);
+    const b=document.getElementById('b-'+e.id);b.firstElementChild.style.width=used+'%';b.classList.toggle('over',left<0);
+    document.getElementById('m-'+e.id).textContent=`${fmt(e.spent)} из ${fmt(e.plan)}`;
+    document.getElementById('r-'+e.id).textContent=e.save?'':(left<0?'перерасход '+fmt(-left):'осталось '+fmt(left));
+    const tr=document.getElementById('tr-'+e.id);
+    if(e.save){tr.className='trend down';tr.textContent='копится';return}
+    const lastSame=e.last*TODAY/DAYS; const d=lastSame?Math.round((e.spent-lastSame)/lastSame*100):0;
+    tr.className='trend '+(d>0?'up':'down'); tr.textContent=(d>0?'▲ +':'▼ ')+d+'%';
+  });
+
+  const spendEnv=ENV.filter(e=>!e.save), plan=spendEnv.reduce((a,e)=>a+e.plan,0);
+  const spent=spendEnv.reduce((a,e)=>a+e.spent,0), pace=plan*TODAY/DAYS, diff=pace-spent;
+  const fore=TODAY?spent/TODAY*DAYS:0, daily=Math.max(0,(plan-spent)/Math.max(1,DAYS-TODAY+1)), normDaily=plan/DAYS;
+  const saved=ENV.filter(e=>e.save).reduce((a,e)=>a+e.spent,0);
+  const set=(id,t)=>document.getElementById(id).textContent=t;
+  const chip=(id,good,t)=>{const c=document.getElementById(id);c.className='chip '+(good?'good':'bad');c.textContent=t};
+  set('k-spent',fmt(spent)); chip('k-spent-chip',diff>=0,diff>=0?`▼ на ${fmt(diff)} меньше плана`:`▲ на ${fmt(-diff)} больше плана`);
+  set('k-daily',fmt(daily)); chip('k-daily-chip',daily>=normDaily,daily>=normDaily?`▲ норма ${fmt(normDaily)}`:`▼ норма ${fmt(normDaily)}`);
+  set('k-fore',fmt(fore)); chip('k-fore-chip',fore<=plan,fore<=plan?`останется ${fmt(plan-fore)}`:`не хватит ${fmt(fore-plan)}`);
+  const mood=fore>plan*1.1?['😱','Тревога! Деньги тают быстро',`При таком темпе к концу месяца не хватит ${fmt(fore-plan)}. Притормозите на пару дней.`]
+   :diff<0?['😬','Чуть разогнались',`Вы на ${fmt(-diff)} впереди плана. Сегодня лучше уложиться в ${fmt(daily)}.`]
+   :diff>plan*0.1?['🤑','Вы молодцы, бюджет в плюсе!',`Уже сэкономили ${fmt(diff)} к этому дню. Можно отправить часть в копилку 🐷`]
+   :['😎','Всё идёт по плану',`Тратите ровно в своём темпе. Так держать!`];
+  const face=document.getElementById('face');if(face.textContent!==mood[0]){face.textContent=mood[0];face.classList.remove('pop');void face.offsetWidth;face.classList.add('pop')}
+  set('moodT',mood[1]);set('moodP',mood[2]);
+  set('k-save',fmt(saved)); set('k-save-chip','за этот месяц');
+
+  const g=byId('goal');g.target=val('tg');const have=g.before+g.spent;
+  const gp=g.target?Math.min(100,have/g.target*100):0;document.getElementById('g-bar').style.width=gp+'%';
+  const per=g.plan||0, rest=Math.max(0,g.target-have), months=per?Math.ceil(rest/per):null;
+  document.getElementById('g-text').innerHTML=rest<=0?`${g.ic} Цель «${esc(g.name)}» собрана! 🎉`:`Накоплено <b>${fmt(have)}</b> из ${fmt(g.target)} (${Math.round(gp)}%). ${months?`При ${fmt(per)} в месяц соберёте через <b>${months} мес.</b>`:'Добавьте процент в этот конверт, чтобы копить.'}`;
+  // food budget line
+  const food=byId('food'); document.getElementById('foodBudget').innerHTML=`В конверте «Продукты» на неделю: <b>${fmt(food.plan/4.345)}</b>`;
+
+  drawCharts(plan,spendEnv);
+  renderTx(); save();
+}
+function drawCharts(plan,spendEnv){
+  if(!window.Chart)return;
+  const ink=css('--muted'), line=css('--line'), acc=css('--accent'), good=css('--good');
+  Chart.defaults.font.family=css('--body'); Chart.defaults.color=ink;
+  const labels=[...Array(DAYS)].map((_,i)=>i+1);
+  let cum=0; const actual=labels.map(d=>{if(d>TODAY)return null;cum+=tx.filter(t=>t.day===d&&!byId(t.env).save).reduce((a,t)=>a+t.sum,0);return cum});
+  const ideal=labels.map(d=>Math.round(plan*d/DAYS));
+  const pace={labels,datasets:[
+    {label:'Можно было потратить',data:ideal,borderColor:good,borderDash:[6,5],borderWidth:2,pointRadius:0,fill:false},
+    {label:'Потрачено',data:actual,borderColor:acc,backgroundColor:acc+'22',borderWidth:3,pointRadius:labels.map(d=>d===TODAY?5:0),pointBackgroundColor:acc,fill:true,tension:.3}]};
+  const opts={responsive:true,maintainAspectRatio:false,animation:{duration:500},interaction:{mode:'index',intersect:false},
+    plugins:{legend:{labels:{boxWidth:12,usePointStyle:true}},tooltip:{callbacks:{title:i=>i[0].label+' число',label:i=>' '+i.dataset.label+': '+fmt(i.raw)}}},
+    scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8}},y:{grid:{color:line},ticks:{callback:v=>(v/1000)+'к'}}}};
+  upsert('c-pace','line',pace,opts);
+
+  const withSpent=spendEnv.filter(e=>e.spent>0);
+  const donut={labels:withSpent.map(e=>e.ic+' '+e.name),datasets:[{data:withSpent.map(e=>e.spent),backgroundColor:withSpent.map(e=>css(e.c)),borderColor:css('--paper'),borderWidth:3}]};
+  upsert('c-donut','doughnut',donut,{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:i=>' '+fmt(i.raw)}}}});
+  const total=withSpent.reduce((a,e)=>a+e.spent,0);
+  document.getElementById('legend').innerHTML=withSpent.sort((a,b)=>b.spent-a.spent).map(e=>`<div><i style="background:${css(e.c)}"></i><span>${e.ic} ${esc(e.name)}</span><span>${Math.round(e.spent/total*100)}%</span></div>`).join('');
+
+  const bars={labels:spendEnv.map(e=>e.ic+' '+e.name),datasets:[
+    {label:'План на месяц',data:spendEnv.map(e=>Math.round(e.plan)),backgroundColor:css('--soft'),borderColor:line,borderWidth:1,borderRadius:6},
+    {label:'Потрачено',data:spendEnv.map(e=>e.spent),backgroundColor:spendEnv.map(e=>e.spent>e.plan?css('--bad'):css(e.c)),borderRadius:6}]};
+  upsert('c-bars','bar',bars,{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:500},
+    plugins:{legend:{labels:{boxWidth:12}},tooltip:{callbacks:{label:i=>' '+i.dataset.label+': '+fmt(i.raw)}}},
+    scales:{x:{grid:{color:line},ticks:{callback:v=>(v/1000)+'к'}},y:{grid:{display:false}}},datasets:{bar:{grouped:false}}});
+}
+function upsert(id,type,data,options){
+  if(charts[id]){charts[id].data=data;charts[id].options=options;charts[id].update();return}
+  charts[id]=new Chart(document.getElementById(id),{type,data,options});
+}
+function renderTx(){
+  const list=[...tx].sort((a,b)=>b.day-a.day||b.id-a.id);
+  document.getElementById('txList').innerHTML=list.length?list.map(t=>{const e=byId(t.env);return `<div class="tx"><span class="d">${t.day} ${MONTHS[M].slice(0,3)}</span><span class="em" style="--c:var(${e.c})">${e.ic}</span><span class="n">${esc(t.note||e.name)}<small>${esc(e.name)}</small></span><span class="s">−${fmt(t.sum)}</span><button type="button" data-del="${t.id}" aria-label="Удалить">×</button></div>`}).join(''):'<p class="hint">🧾 Пока трат нет. Добавьте первую выше.</p>';
+}
+function burst(list,x,y){haptic('ok');if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;x=x??innerWidth/2;y=y??innerHeight*0.6;
+  for(let k=0;k<16;k++){const sp=document.createElement('span');sp.className='burst';sp.textContent=list[k%list.length];
+  sp.style.left=x+'px';sp.style.top=y+'px';const a=Math.random()*Math.PI*2,d=80+Math.random()*120;
+  sp.style.setProperty('--dx',Math.cos(a)*d+'px');sp.style.setProperty('--dy',(Math.sin(a)*d-80)+'px');sp.style.setProperty('--rot',(Math.random()*120-60)+'deg');
+  document.body.appendChild(sp);setTimeout(()=>sp.remove(),1150)}}
+document.getElementById('envs').addEventListener('click',e=>{
+  const b=e.target.closest('[data-ic]');if(b){const pk=document.getElementById('pk-'+b.dataset.ic);pk.hidden=!pk.hidden;return}
+  const p=e.target.closest('[data-pick]');if(p){const en=byId(p.dataset.pick);en.ic=p.dataset.v;document.getElementById('ic-'+en.id).textContent=en.ic;document.getElementById('pk-'+en.id).hidden=true;fillSelect();render();burst([en.ic],e.clientX,e.clientY)}
+});
+document.getElementById('txList').addEventListener('click',e=>{const id=+e.target.dataset.del;if(!id)return;tx=tx.filter(t=>t.id!==id);render();toast('🗑️ Трата удалена')});
+document.getElementById('addForm').addEventListener('submit',e=>{
+  e.preventDefault();const sum=val('a-sum');if(!sum)return;
+  const env=document.getElementById('a-env').value;
+  tx.push({id:Date.now(),day:TODAY,env,sum,note:document.getElementById('a-note').value.trim()});
+  document.getElementById('a-sum').value='';document.getElementById('a-note').value='';
+  render();const en=byId(env);const left=en.plan-en.spent;
+  if(en.save){toast(`🐷 Отложено ${fmt(sum)}. Так держать!`);burst(['🪙','💰','🐷','✨'])}
+  else if(left<0){toast(`😬 Перерасход в «${en.name}»: ${fmt(-left)}`)}
+  else{toast(`${en.ic} Осталось в «${en.name}»: ${fmt(left)}`);burst([en.ic,'✨'])}
+});
+document.getElementById('p-env').addEventListener('input',e=>{
+  if(e.target.classList.contains('range')){const id=e.target.id.slice(4),free=Math.max(0,val('income')-val('rent')-val('loans'));document.getElementById('amt-'+id).value=r10(free*e.target.value/100);}
+  if(e.target.classList.contains('env-name')){const en=byId(e.target.id.slice(3));en.name=e.target.value.trim()||'Без названия';fillSelect();}
+  render();
+});
+document.getElementById('fix').addEventListener('click',()=>{
+  const free=Math.max(0,val('income')-val('rent')-val('loans')),tot=ENV.reduce((a,e)=>a+val('amt-'+e.id),0)||1; let sum=0;
+  ENV.forEach((e,i)=>{let v=r10(val('amt-'+e.id)*free/tot);if(i===ENV.length-1)v=free-sum;sum+=v;document.getElementById('amt-'+e.id).value=v});
+  render();toast('🪄 Готово: ровно 100%');burst(['✨','✅']);
+});
+
+/* tabs */
+document.querySelectorAll('[role=tab]').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('[role=tab]').forEach(b=>{const on=b===t;b.setAttribute('aria-selected',on);document.getElementById(b.getAttribute('aria-controls')).hidden=!on});
+  if(t.id==='t-over')Object.values(charts).forEach(c=>c.resize());
+}));
+
+/* food */
+const MENU=[
+ ['Пн','Овсянка с яблоком','Куриный суп с вермишелью','Гречка с котлетами, салат из капусты'],
+ ['Вт','Сырники со сметаной','Куриный суп (вчерашний)','Макароны по-флотски, огурцы'],
+ ['Ср','Яичница с тостами','Гречка с котлетами (вчерашние)','Тушёная капуста с сосисками'],
+ ['Чт','Манная каша','Макароны по-флотски (вчерашние)','Плов с курицей'],
+ ['Пт','Овсянка с бананом','Плов (вчерашний)','Рыбные котлеты, картофельное пюре'],
+ ['Сб','Блины','Борщ','Запечённая курица с овощами'],
+ ['Вс','Омлет с сыром','Борщ (вчерашний)','Домашняя пицца']];
+const SHOP={'🥩 Мясо и рыба':[[2,'кг','Куриные бёдра'],[1.5,'кг','Фарш'],[1,'уп.','Сосиски'],[0.8,'кг','Филе минтая']],
+ '🌾 Крупы и мука':[[1,'кг','Гречка'],[1,'кг','Рис'],[0.5,'кг','Овсянка'],[0.5,'кг','Манка'],[1,'кг','Макароны'],[0.4,'кг','Вермишель'],[1,'кг','Мука']],
+ '🥕 Овощи и фрукты':[[1,'шт.','Капуста'],[3,'кг','Картофель'],[1,'кг','Морковь'],[1,'кг','Лук'],[0.5,'кг','Свёкла'],[1,'кг','Огурцы'],[1,'кг','Яблоки'],[1,'кг','Бананы']],
+ '🥛 Молочное и яйца':[[3,'л','Молоко'],[0.6,'кг','Творог'],[20,'шт.','Яйца'],[0.3,'кг','Сыр'],[0.4,'кг','Сметана']],
+ '🍞 Прочее':[[4,'шт.','Хлеб'],[1,'шт.','Томатная паста'],[1,'л','Подсолнечное масло']]};
+let day=Math.min(6,(now.getDay()+6)%7);
+function renderFood(){
+  document.getElementById('people').textContent=people;
+  document.getElementById('days').innerHTML=MENU.map((d,i)=>`<button type="button" aria-pressed="${i===day}" data-day="${i}">${d[0]}</button>`).join('');
+  const d=MENU[day];
+  document.getElementById('meals').innerHTML=[['🍳 Завтрак',d[1]],['🍲 Обед',d[2]],['🍝 Ужин',d[3]]].map(m=>`<div class="meal"><span>${m[0]}</span><div>${m[1]}</div></div>`).join('');
+  const k=people/4; let all=0, done=0;
+  document.getElementById('shop').innerHTML=Object.entries(SHOP).map(([c,items])=>`<div class="cat">${c}</div>`+items.map(([q,u,n])=>{
+    const id=n; all++; if(checked[id])done++;
+    let qq=q*k; qq=u==='шт.'?Math.max(1,Math.round(qq)):Math.round(qq*10)/10;
+    return `<label><input type="checkbox" data-item="${id}" ${checked[id]?'checked':''}><span>${n} — ${String(qq).replace('.',',')} ${u}</span></label>`}).join('')).join('');
+  document.getElementById('shopProg').textContent=done===all?`🎉 Всё куплено! ${done} из ${all}`:`🛒 Куплено ${done} из ${all}`;
+  document.getElementById('shopBar').style.width=(done/all*100)+'%';
+}
+document.getElementById('days').addEventListener('click',e=>{if(e.target.dataset.day){day=+e.target.dataset.day;renderFood()}});
+document.getElementById('shop').addEventListener('change',e=>{const id=e.target.dataset.item;if(!id)return;checked[id]=e.target.checked;renderFood();save();if(e.target.checked){const all=document.querySelectorAll('#shop input').length,done=document.querySelectorAll('#shop input:checked').length;if(done===all){burst(['🎉','🛒','✨','🥳']);toast('🥳 Список закрыт! Ни одной лишней покупки')}}});
+document.getElementById('pMinus').addEventListener('click',()=>{if(people>1){people--;renderFood();save()}});
+document.getElementById('pPlus').addEventListener('click',()=>{if(people<8){people++;renderFood();save()}});
+
+renderFood();
+render();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{Object.values(charts).forEach(c=>c.destroy());charts={};render()});
+new MutationObserver(()=>{Object.values(charts).forEach(c=>c.destroy());charts={};render()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+document.getElementById('clearEx').addEventListener('click',()=>{
+  tx=[];checked={};document.getElementById('demoBadge').hidden=true;render();renderFood();
+  toast('🧹 Готово! Впишите свой доход и суммы конвертов');
+});
+}
+boot();
+</script>
+</body>
+</html>
