@@ -283,10 +283,10 @@ const ICONS=['🛒','🍎','🧴','🏠','🚌','🚗','⛽','🧸','👶','🎒
 let tx, people=4, checked={};
 const byIdEarly=id=>ENV.find(e=>e.id===id);
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s){tx=s.tx;people=s.people||4;checked=s.checked||{};ENV.forEach(e=>{if(s.a&&s.a[e.id]!=null)e.amt=s.a[e.id];if(s.n&&s.n[e.id])e.name=s.n[e.id];if(s.i&&s.i[e.id])e.ic=s.i[e.id]});if(s.target)byIdEarly('goal').target=s.target;['income','rent','loans'].forEach(k=>{if(s[k]!=null)document.getElementById(k).value=s[k]})}}catch(e){}
+try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s){tx=s.tx;people=s.people||4;checked=s.checked||{};ENV.forEach(e=>{if(s.a&&s.a[e.id]!=null)e.amt=s.a[e.id];if(s.n&&s.n[e.id])e.name=s.n[e.id];if(s.i&&s.i[e.id])e.ic=s.i[e.id]});if(s.target)byIdEarly('goal').target=s.target;if(s.before!=null)byIdEarly('goal').before=s.before;['income','rent','loans'].forEach(k=>{if(s[k]!=null)document.getElementById(k).value=s[k]})}}catch(e){}
 if(!tx)tx=SAMPLE.filter(t=>t[0]<=TODAY).map((t,i)=>({id:i+1,day:t[0],env:t[1],sum:t[2],note:t[3]}));
 const cloudSave=str=>{try{localStorage.setItem(KEY,str)}catch(e){}cloud.set(str)};
-const save=()=>{try{const a={},n={},i={};ENV.forEach(e=>{a[e.id]=e.amt;n[e.id]=e.name;i[e.id]=e.ic});cloudSave(JSON.stringify({tx,people,checked,a,n,i,target:byId('goal').target,income:val('income'),rent:val('rent'),loans:val('loans')}))}catch(e){}};
+const save=()=>{try{const a={},n={},i={};ENV.forEach(e=>{a[e.id]=e.amt;n[e.id]=e.name;i[e.id]=e.ic});cloudSave(JSON.stringify({tx,people,checked,a,n,i,target:byId('goal').target,before:byId('goal').before,income:val('income'),rent:val('rent'),loans:val('loans')}))}catch(e){}};
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const fmt=n=>Math.round(n).toLocaleString('ru-RU')+' ₽';
 const val=id=>Math.max(0,parseFloat(document.getElementById(id).value)||0);
@@ -298,12 +298,13 @@ const r10=v=>Math.round(v/10)*10;
 {const f0=Math.max(0,val('income')-val('rent')-val('loans'));ENV.forEach(e=>{if(e.amt==null)e.amt=r10(f0*e.p/100)})}
 document.getElementById('envs').innerHTML=ENV.map(e=>`<div class="env" style="--c:var(${e.c})">
  <div class="env-head"><button type="button" class="ico" id="ic-${e.id}" data-ic="${e.id}" aria-label="Сменить картинку">${e.ic}</button><input class="env-name" type="text" id="nm-${e.id}" value="${esc(e.name)}" maxlength="28" aria-label="Название конверта"><span class="pen" aria-hidden="true">✎</span></div>
- <div class="amt-row"><label for="amt-${e.id}">Выделено в месяц</label><div class="amt-box"><input class="amt" type="number" inputmode="numeric" id="amt-${e.id}" min="0" step="100" value="${e.amt}"><span>₽</span></div></div>
+ <div class="amt-row"><label for="amt-${e.id}">${e.save?'💰 Откладываю в месяц':'Выделено в месяц'}</label><div class="amt-box"><input class="amt" type="number" inputmode="numeric" id="amt-${e.id}" min="0" step="100" value="${e.amt}"><span>₽</span></div></div>
  <div class="picker" id="pk-${e.id}" hidden>${ICONS.map(x=>`<button type="button" data-pick="${e.id}" data-v="${x}">${x}</button>`).join('')}</div>
  <div class="pct-row"><input class="range" type="range" id="pct-${e.id}" min="0" max="100" step="1" value="0" aria-label="Доля конверта, %"><b class="pctv" id="pv-${e.id}"></b></div>
  <div class="bar" id="b-${e.id}"><i></i></div>
  <div class="env-meta"><span id="m-${e.id}"></span><span id="r-${e.id}"></span><span class="trend" id="tr-${e.id}"></span></div>
- ${e.target?`<div class="goal"><div class="row"><label for="tg">Сколько нужно на цель, ₽</label><input type="number" id="tg" min="0" step="1000" value="${e.target}"></div>
+ ${e.target?`<div class="goal"><div class="row"><label for="tg">🎯 Стоимость цели, ₽</label><input type="number" id="tg" min="0" step="1000" value="${e.target}"></div>
+ <div class="row"><label for="gb">🐷 Уже накоплено раньше, ₽</label><input type="number" id="gb" min="0" step="1000" value="${e.before}"></div>
  <div class="bar" style="--c:var(${e.c})"><i id="g-bar"></i></div><div id="g-text"></div></div>`:''}</div>`).join('');
 const fillSelect=()=>{const sel=document.getElementById('a-env'),v=sel.value;sel.innerHTML=ENV.map(e=>`<option value="${e.id}">${e.ic} ${esc(e.name)}</option>`).join('');if(v)sel.value=v};fillSelect();
 
@@ -325,8 +326,8 @@ function render(){
 
   ENV.forEach(e=>{
     const left=e.plan-e.spent, used=e.plan?Math.min(100,e.spent/e.plan*100):(e.spent?100:0);
-    const b=document.getElementById('b-'+e.id);b.firstElementChild.style.width=used+'%';b.classList.toggle('over',left<0);
-    document.getElementById('m-'+e.id).textContent=`${fmt(e.spent)} из ${fmt(e.plan)}`;
+    const b=document.getElementById('b-'+e.id);b.firstElementChild.style.width=used+'%';b.classList.toggle('over',left<0&&!e.save);
+    document.getElementById('m-'+e.id).textContent=e.save?`отложено ${fmt(e.spent)} из ${fmt(e.plan)}`:`${fmt(e.spent)} из ${fmt(e.plan)}`;
     document.getElementById('r-'+e.id).textContent=e.save?'':(left<0?'перерасход '+fmt(-left):'осталось '+fmt(left));
     const tr=document.getElementById('tr-'+e.id);
     if(e.save){tr.className='trend down';tr.textContent='копится';return}
@@ -351,7 +352,7 @@ function render(){
   set('moodT',mood[1]);set('moodP',mood[2]);
   set('k-save',fmt(saved)); set('k-save-chip','за этот месяц');
 
-  const g=byId('goal');g.target=val('tg');const have=g.before+g.spent;
+  const g=byId('goal');g.target=val('tg');g.before=val('gb');const have=g.before+g.spent;
   const gp=g.target?Math.min(100,have/g.target*100):0;document.getElementById('g-bar').style.width=gp+'%';
   const per=g.plan||0, rest=Math.max(0,g.target-have), months=per?Math.ceil(rest/per):null;
   document.getElementById('g-text').innerHTML=rest<=0?`${g.ic} Цель «${esc(g.name)}» собрана! 🎉`:`Накоплено <b>${fmt(have)}</b> из ${fmt(g.target)} (${Math.round(gp)}%). ${months?`При ${fmt(per)} в месяц соберёте через <b>${months} мес.</b>`:'Добавьте процент в этот конверт, чтобы копить.'}`;
@@ -473,7 +474,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{Object
 new MutationObserver(()=>{Object.values(charts).forEach(c=>c.destroy());charts={};render()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
 document.getElementById('clearEx').addEventListener('click',()=>{
-  tx=[];checked={};document.getElementById('demoBadge').hidden=true;render();renderFood();
+  tx=[];checked={};document.getElementById('demoBadge').hidden=true;byId('goal').before=0;document.getElementById('gb').value=0;render();renderFood();
   toast('🧹 Готово! Впишите свой доход и суммы конвертов');
 });
 }
