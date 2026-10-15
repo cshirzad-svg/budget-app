@@ -306,7 +306,7 @@ document.getElementById('envs').innerHTML=ENV.map(e=>`<div class="env" style="--
  ${e.target?`<div class="goal"><div class="row"><label for="tg">🎯 Стоимость цели, ₽</label><input type="number" id="tg" min="0" step="1000" value="${e.target}"></div>
  <div class="row"><label for="gb">🐷 Уже накоплено раньше, ₽</label><input type="number" id="gb" min="0" step="1000" value="${e.before}"></div>
  <div class="bar" style="--c:var(${e.c})"><i id="g-bar"></i></div><div id="g-text"></div></div>`:''}</div>`).join('');
-const fillSelect=()=>{const sel=document.getElementById('a-env'),v=sel.value;sel.innerHTML=ENV.map(e=>`<option value="${e.id}">${e.ic} ${esc(e.name)}</option>`).join('');if(v)sel.value=v};fillSelect();
+const fillSelect=()=>{const sel=document.getElementById('a-env'),v=sel.value;const o=e=>`<option value="${e.id}">${e.ic} ${esc(e.name)}${e.target?' (цель)':''}</option>`;sel.innerHTML=`<optgroup label="💸 Траты">${ENV.filter(e=>!e.save).map(o).join('')}</optgroup><optgroup label="🐷 Отложить в копилку / на цель">${ENV.filter(e=>e.save).map(o).join('')}</optgroup>`;if(v)sel.value=v};fillSelect();
 
 let charts={};
 function compute(){
