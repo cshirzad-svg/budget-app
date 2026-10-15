@@ -244,6 +244,10 @@ body{margin:0}
 const tg=window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData!==undefined?Telegram.WebApp:null;
 const inTG=!!(tg&&tg.platform&&tg.platform!=='unknown');
 const SKEY='envelope-demo-v6';
+const useServer=inTG&&!!tg.initData&&location.protocol==='https:'&&!location.hostname.endsWith('github.io');
+const api=(method,body)=>fetch('/api/state',{method,headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:body?JSON.stringify(body):undefined}).then(r=>r.ok?r.json():null);
+let deletedIds=[];
+const server={t:null,set(str){if(!useServer)return;clearTimeout(this.t);this.t=setTimeout(()=>{const d=deletedIds.slice();api('PUT',{state:JSON.parse(str),deleted:d}).then(r=>{if(r&&r.ok)deletedIds=deletedIds.filter(x=>!d.includes(x))}).catch(()=>{})},700)}};
 const haptic=(t)=>{try{if(!inTG)return;if(t==='ok')tg.HapticFeedback.notificationOccurred('success');else tg.HapticFeedback.impactOccurred('light')}catch(e){}};
 /* Cloud storage: split JSON into 3500-char chunks */
 const cloud={
@@ -259,7 +263,9 @@ function boot(){
   if(inTG){try{tg.ready();tg.expand();document.documentElement.setAttribute('data-theme',tg.colorScheme==='dark'?'dark':'light');
     tg.onEvent('themeChanged',()=>document.documentElement.setAttribute('data-theme',tg.colorScheme==='dark'?'dark':'light'));
     try{tg.setHeaderColor(tg.colorScheme==='dark'?'#12151d':'#f3f5f9');tg.setBackgroundColor(tg.colorScheme==='dark'?'#12151d':'#f3f5f9')}catch(e){}}catch(e){}}
-  cloud.get(str=>{if(str){try{localStorage.setItem(SKEY,str)}catch(e){}}main()});
+  const fromServer=useServer?api('GET').then(r=>r&&r.state?JSON.stringify(r.state):null).catch(()=>null):Promise.resolve(null);
+  fromServer.then(str=>{if(str){try{localStorage.setItem(SKEY,str)}catch(e){}main();return}
+    cloud.get(str2=>{if(str2){try{localStorage.setItem(SKEY,str2)}catch(e){}}main()})});
 }
 document.addEventListener('click',e=>{if(e.target.closest('button,[role=tab],label'))haptic()});
 function main(){
@@ -285,7 +291,7 @@ const byIdEarly=id=>ENV.find(e=>e.id===id);
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s){tx=s.tx;people=s.people||4;checked=s.checked||{};ENV.forEach(e=>{if(s.a&&s.a[e.id]!=null)e.amt=s.a[e.id];if(s.n&&s.n[e.id])e.name=s.n[e.id];if(s.i&&s.i[e.id])e.ic=s.i[e.id]});if(s.target)byIdEarly('goal').target=s.target;if(s.before!=null)byIdEarly('goal').before=s.before;['income','rent','loans'].forEach(k=>{if(s[k]!=null)document.getElementById(k).value=s[k]})}}catch(e){}
 if(!tx)tx=SAMPLE.filter(t=>t[0]<=TODAY).map((t,i)=>({id:i+1,day:t[0],env:t[1],sum:t[2],note:t[3]}));
-const cloudSave=str=>{try{localStorage.setItem(KEY,str)}catch(e){}cloud.set(str)};
+const cloudSave=str=>{try{localStorage.setItem(KEY,str)}catch(e){}cloud.set(str);server.set(str)};
 const save=()=>{try{const a={},n={},i={};ENV.forEach(e=>{a[e.id]=e.amt;n[e.id]=e.name;i[e.id]=e.ic});cloudSave(JSON.stringify({tx,people,checked,a,n,i,target:byId('goal').target,before:byId('goal').before,income:val('income'),rent:val('rent'),loans:val('loans')}))}catch(e){}};
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const fmt=n=>Math.round(n).toLocaleString('ru-RU')+' ₽';
@@ -407,7 +413,7 @@ document.getElementById('envs').addEventListener('click',e=>{
   const b=e.target.closest('[data-ic]');if(b){const pk=document.getElementById('pk-'+b.dataset.ic);pk.hidden=!pk.hidden;return}
   const p=e.target.closest('[data-pick]');if(p){const en=byId(p.dataset.pick);en.ic=p.dataset.v;document.getElementById('ic-'+en.id).textContent=en.ic;document.getElementById('pk-'+en.id).hidden=true;fillSelect();render();burst([en.ic],e.clientX,e.clientY)}
 });
-document.getElementById('txList').addEventListener('click',e=>{const id=+e.target.dataset.del;if(!id)return;tx=tx.filter(t=>t.id!==id);render();toast('🗑️ Трата удалена')});
+document.getElementById('txList').addEventListener('click',e=>{const id=+e.target.dataset.del;if(!id)return;deletedIds.push(id);tx=tx.filter(t=>t.id!==id);render();toast('🗑️ Трата удалена')});
 document.getElementById('addForm').addEventListener('submit',e=>{
   e.preventDefault();const sum=val('a-sum');if(!sum)return;
   const env=document.getElementById('a-env').value;
@@ -473,8 +479,11 @@ render();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{Object.values(charts).forEach(c=>c.destroy());charts={};render()});
 new MutationObserver(()=>{Object.values(charts).forEach(c=>c.destroy());charts={};render()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
+function pullServer(){if(!useServer)return;api('GET').then(r=>{if(!r||!r.state||!r.state.tx)return;const have=new Set(tx.map(t=>t.id));const add=r.state.tx.filter(t=>!have.has(t.id)&&!deletedIds.includes(t.id));if(add.length){tx.push(...add);render();toast(`🤖 Из чата добавлено трат: ${add.length}`)}}).catch(()=>{})}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pullServer()});
+try{if(inTG)tg.onEvent('activated',pullServer)}catch(e){}
 document.getElementById('clearEx').addEventListener('click',()=>{
-  tx=[];checked={};document.getElementById('demoBadge').hidden=true;byId('goal').before=0;document.getElementById('gb').value=0;render();renderFood();
+  deletedIds.push(...tx.map(t=>t.id));tx=[];checked={};document.getElementById('demoBadge').hidden=true;byId('goal').before=0;document.getElementById('gb').value=0;render();renderFood();
   toast('🧹 Готово! Впишите свой доход и суммы конвертов');
 });
 }
