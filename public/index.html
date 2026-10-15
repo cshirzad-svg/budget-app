@@ -187,7 +187,7 @@ body{margin:0}
       <div class="row"><label for="loans">Кредиты и рассрочки</label><input type="number" id="loans" min="0" step="500" value="7000"></div>
       <div class="free"><span>Остаётся на конверты</span><b id="free"></b></div>
       <div class="status" id="status"></div>
-      <button type="button" class="btn clear" id="clearEx">🧹 Очистить пример и начать со своими цифрами</button>
+      <button type="button" class="btn clear" id="clearEx">🧹 Очистить всё и начать с нуля</button>
       <button type="button" class="btn" id="fix" hidden>🪄 Выровнять до 100% автоматически</button>
     </div>
     <div class="card">
@@ -482,9 +482,18 @@ new MutationObserver(()=>{Object.values(charts).forEach(c=>c.destroy());charts={
 function pullServer(){if(!useServer)return;api('GET').then(r=>{if(!r||!r.state||!r.state.tx)return;const have=new Set(tx.map(t=>t.id));const add=r.state.tx.filter(t=>!have.has(t.id)&&!deletedIds.includes(t.id));if(add.length){tx.push(...add);render();toast(`🤖 Из чата добавлено трат: ${add.length}`)}}).catch(()=>{})}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pullServer()});
 try{if(inTG)tg.onEvent('activated',pullServer)}catch(e){}
+let clearArmed=null;
 document.getElementById('clearEx').addEventListener('click',()=>{
-  deletedIds.push(...tx.map(t=>t.id));tx=[];checked={};document.getElementById('demoBadge').hidden=true;byId('goal').before=0;document.getElementById('gb').value=0;render();renderFood();
-  toast('🧹 Готово! Впишите свой доход и суммы конвертов');
+  const btn=document.getElementById('clearEx');
+  if(!clearArmed){btn.textContent='⚠️ Точно стереть всё? Нажми ещё раз';clearArmed=setTimeout(()=>{clearArmed=null;btn.textContent='🧹 Очистить всё и начать с нуля'},4000);return}
+  clearTimeout(clearArmed);clearArmed=null;btn.textContent='🧹 Очистить всё и начать с нуля';
+  deletedIds.push(...tx.map(t=>t.id));tx=[];checked={};
+  ['income','rent','loans','gb'].forEach(id=>document.getElementById(id).value=0);
+  ENV.forEach(e=>{document.getElementById('amt-'+e.id).value=0});
+  byId('goal').before=0;document.getElementById('demoBadge').hidden=true;
+  render();renderFood();
+  const inc=document.getElementById('income');inc.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>{inc.select()},400);
+  toast('🧹 Всё по нулям! Начни с дохода семьи');
 });
 }
 boot();
