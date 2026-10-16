@@ -206,13 +206,108 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
 .wiz-nav{display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:6px}
 .linkbtn{border:0;background:none;color:var(--muted);font:500 14px var(--body);cursor:pointer;padding:8px;text-decoration:underline}
 .demo{cursor:pointer;border:0;font-family:var(--body)}
+/* ---- v3: темы ---- */
+:root.th-lav{--accent:#6f5fd8;--accent-soft:#ebe8fb;--bg:#f4f3fb;--e1:#6f5fd8}
+:root.th-lav[data-theme="dark"]{--accent:#a598f2;--accent-soft:#262141;--bg:#13121c;--paper:#1c1b29;--soft:#25233a;--line:#302d48;--e1:#a598f2}
+:root.th-peach{--accent:#e0743c;--accent-soft:#fdeadf;--bg:#fbf6f2;--e1:#e0743c}
+:root.th-peach[data-theme="dark"]{--accent:#f39a69;--accent-soft:#3a2418;--bg:#17130f;--paper:#211b16;--soft:#2b231c;--line:#3a2f25;--e1:#f39a69}
+:root.th-ocean{--accent:#2f6fd6;--accent-soft:#e2ecfb;--bg:#f2f6fc;--e1:#2f6fd6}
+:root.th-ocean[data-theme="dark"]{--accent:#6aa1f5;--accent-soft:#18284a;--bg:#0f1420;--paper:#161d2c;--soft:#1e2738;--line:#273248;--e1:#6aa1f5}
+:root.th-sakura{--accent:#d24f84;--accent-soft:#fbe6ef;--bg:#fcf4f7;--e1:#d24f84}
+:root.th-sakura[data-theme="dark"]{--accent:#f088b2;--accent-soft:#3b1a29;--bg:#171015;--paper:#21171e;--soft:#2b1f28;--line:#3a2a35;--e1:#f088b2}
+:root.th-graphite{--accent:#3d4554;--accent-soft:#e6e8ec;--bg:#eef0f3;--e1:#5d6779}
+:root.th-graphite[data-theme="dark"]{--accent:#c9cfda;--accent-soft:#2a2f39;--bg:#0e0f12;--paper:#17191e;--soft:#1f2228;--line:#2a2e36;--e1:#9aa3b3}
+:root.th-graphite .tabs button[aria-selected="true"],:root.th-graphite .btn:not(.ghost):not(.clear):not(.danger){color:var(--paper)}
+/* шапка */
+.topbar{display:flex;align-items:flex-start;gap:10px}
+.topbar h1{flex:1;min-width:0}
+.gear{width:40px;height:40px;flex:none;border-radius:12px;border:1px solid var(--line);background:var(--paper);font-size:19px;cursor:pointer;display:grid;place-items:center}
+.gear[aria-pressed="true"]{background:var(--accent);border-color:var(--accent)}
+.example-bar{display:flex;align-items:center;gap:10px;justify-content:space-between;background:var(--accent);color:#fff;border-radius:14px;padding:10px 12px;font-size:14px;font-weight:600}
+.example-bar button{border:0;border-radius:10px;background:#fff;color:var(--accent);font:600 13px var(--body);padding:8px 10px;cursor:pointer;flex:none}
+/* помощь */
+.card h2{display:flex;align-items:center;gap:8px}
+.help{margin-left:auto;width:24px;height:24px;flex:none;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--muted);font:700 13px var(--body);cursor:pointer;display:grid;place-items:center}
+.sheet-bg{position:fixed;inset:0;background:rgba(10,12,18,.45);z-index:45;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--paper);color:var(--ink);width:100%;max-width:600px;border-radius:20px 20px 0 0;padding:20px;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px;box-shadow:0 -8px 30px rgba(0,0,0,.2);animation:up .25s ease}
+.sheet h3{font-family:var(--display);font-weight:500;font-size:17px;margin:0}
+.sheet p{margin:0;color:var(--ink);line-height:1.55}
+.sheet .ex{background:var(--soft);border-radius:12px;padding:10px 12px;font-size:14px;color:var(--muted)}
+@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+/* тур */
+.tour-hole{position:fixed;z-index:50;border-radius:14px;box-shadow:0 0 0 9999px rgba(10,12,18,.62);transition:all .3s ease;pointer-events:none;outline:3px solid var(--accent);outline-offset:3px}
+.tour-tip{position:fixed;z-index:51;left:16px;right:16px;max-width:420px;margin:0 auto;background:var(--paper);color:var(--ink);border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:10px;transition:top .3s ease}
+.tour-tip b{font-family:var(--display);font-weight:500;font-size:16px}
+.tour-tip p{margin:0;font-size:14px;line-height:1.5}
+.tour-tip .row2{display:flex;align-items:center;gap:8px}
+.tour-tip .row2 small{color:var(--muted);margin-right:auto}
+.tour-tip .row2 button{font:600 14px var(--body);border:0;border-radius:10px;padding:9px 14px;cursor:pointer}
+.tour-next{background:var(--accent);color:#fff}
+.tour-skip{background:var(--soft);color:var(--muted)}
+.tour-block{position:fixed;inset:0;z-index:49}
+/* анимация «пишешь боту → в приложении» */
+.anim{background:var(--soft);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.anim .chat{display:flex;flex-direction:column;gap:8px;min-height:104px}
+.anim .msg{max-width:78%;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.35;opacity:0;animation:6s infinite both}
+.anim .me{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px;animation-name:a-me}
+.anim .bot{align-self:flex-start;background:var(--paper);border:1px solid var(--line);border-bottom-left-radius:4px;animation-name:a-bot}
+.anim .typing::after{content:'|';animation:blink .6s steps(1) infinite}
+.anim .down{text-align:center;font-size:18px;opacity:0;animation:a-down 6s infinite both}
+.anim .mini{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:6px;opacity:0;animation:a-card 6s infinite both}
+.anim .mini .t{display:flex;justify-content:space-between;font-size:14px}
+.anim .mini b{font-family:var(--display);font-weight:500}
+.anim .mbar{height:8px;background:var(--soft);border-radius:99px;overflow:hidden}
+.anim .mbar i{display:block;height:100%;width:0;background:var(--accent);border-radius:99px;animation:a-bar 6s infinite both}
+@keyframes a-me{0%,8%{opacity:0;transform:translateY(8px)}14%,90%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a-bot{0%,24%{opacity:0;transform:translateY(8px)}30%,90%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a-down{0%,40%{opacity:0;transform:translateY(-6px)}46%,90%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a-card{0%,48%{opacity:0;transform:scale(.94)}55%,90%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a-bar{0%,55%{width:0}70%,90%{width:62%}100%{width:62%}}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.anim .msg,.anim .down,.anim .mini,.anim .mbar i{animation:none;opacity:1}.anim .mbar i{width:62%}}
+.hello{display:flex;flex-direction:column;gap:6px}
+.hello .e{font-size:44px;line-height:1}
+/* настройки */
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--soft);border-radius:12px;padding:4px}
+.seg button{font:600 13px var(--body);border:0;border-radius:9px;padding:9px 4px;background:none;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.swatches{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.swatches button{display:flex;align-items:center;gap:8px;font:600 13px var(--body);color:var(--ink);background:var(--paper);border:2px solid var(--line);border-radius:12px;padding:9px 10px;cursor:pointer}
+.swatches button[aria-pressed="true"]{border-color:var(--ink)}
+.swatches i{width:18px;height:18px;border-radius:50%;flex:none}
+.sw-row{display:flex;align-items:center;gap:10px}
+.sw-row .lbl{flex:1;min-width:0}
+.sw-row .lbl small{display:block;color:var(--muted);font-size:12px}
+.sw-row input[type=time]{font:500 15px var(--body);color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:7px 8px;width:96px}
+.switch{position:relative;width:48px;height:28px;flex:none}
+.switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;z-index:1}
+.switch span{position:absolute;inset:0;background:var(--line);border-radius:99px;transition:.2s}
+.switch span::after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:.2s}
+.switch input:checked+span{background:var(--accent)}
+.switch input:checked+span::after{transform:translateX(20px)}
+.switch input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+textarea{width:100%;box-sizing:border-box;font:500 15px var(--body);color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px;min-height:90px;resize:vertical}
+.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+/* сводная таблица */
+.tbl-wrap{overflow-x:auto;margin:0 -4px}
+.tbl{border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;width:100%;min-width:max-content}
+.tbl th,.tbl td{padding:8px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl th{color:var(--muted);font-weight:600;font-size:12px}
+.tbl td:first-child,.tbl th:first-child{text-align:left;position:sticky;left:0;background:var(--paper)}
+.tbl tr.tot td{font-weight:700;border-bottom:0}
+.tbl td.z{color:var(--line)}
+/* пустой старт */
+.empty-start{background:var(--accent-soft);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:8px}
+.empty-start b{font-family:var(--display);font-weight:500;font-size:16px}
+.empty-start p{margin:0;font-size:14px}
+.empty-start code{background:var(--paper);border-radius:6px;padding:1px 6px;font-family:inherit;font-weight:600}
 </style>
 </head>
 <body>
 
 <div class="wrap">
-  <button type="button" class="demo" id="demoBadge" hidden>Пример данных · нажми, чтобы настроить своё</button>
-  <h1 id="appTitle">Семейный бюджет на конвертах</h1>
+  <div class="example-bar" id="demoBadge" hidden><span>👀 Это пример. Твои данные не тронуты.</span><button type="button" id="exitDemo">Выйти из примера</button></div>
+  <div class="topbar"><h1 id="appTitle">Семейный бюджет на конвертах</h1><button type="button" class="gear" id="gearBtn" aria-label="Настройки" aria-pressed="false">⚙️</button></div>
   <div class="period">
     <button type="button" id="pPrev" aria-label="Предыдущий месяц">◀</button>
     <div class="pl"><b id="pLabel"></b><small id="pSub"></small></div>
@@ -240,9 +335,10 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
       <div class="chips" id="s-chips"></div>
     </div>
     <div class="card only-simple">
-      <h2>📅 По дням</h2>
+      <h2>📅 По дням<button type="button" class="help" data-help="days" aria-label="Что это?">?</button></h2>
       <div class="chart-box"><canvas id="c-days" aria-label="Траты по дням"></canvas></div>
     </div>
+    <div class="empty-start" id="emptyStart" hidden><b>👋 Здесь пока пусто</b><p>Запиши первую трату: напиши боту <code>кофе 300</code> или открой вкладку «🧾 Траты». Через пару трат здесь появятся графики.</p></div>
     <div class="mascot only-env"><span class="face" id="face">😎</span><div><b id="moodT"></b><p id="moodP"></p></div></div>
     <div class="kpis only-env">
       <div class="kpi"><small>💸 Потрачено</small><b id="k-spent"></b><span class="chip" id="k-spent-chip"></span></div>
@@ -251,37 +347,42 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
       <div class="kpi"><small>🐷 Отложено</small><b id="k-save"></b><span class="chip good" id="k-save-chip"></span></div>
     </div>
     <div class="card only-env">
-      <h2>📈 Темп трат за месяц</h2>
+      <h2>📈 Темп трат за месяц<button type="button" class="help" data-help="pace" aria-label="Что это?">?</button></h2>
       <p class="hint">Зелёная линия — сколько можно было потратить к этому дню. Если ваша линия ниже, вы в плюсе.</p>
       <div class="chart-box"><canvas id="c-pace" aria-label="График темпа трат"></canvas></div>
     </div>
     <div class="card">
-      <h2>🍩 Куда уходят деньги</h2>
+      <h2>🍩 Куда уходят деньги<button type="button" class="help" data-help="donut" aria-label="Что это?">?</button></h2>
       <div class="donut-wrap">
         <div class="chart-box"><canvas id="c-donut" aria-label="Распределение трат"></canvas></div>
         <div class="legend" id="legend"></div>
       </div>
     </div>
     <div class="card only-simple">
-      <h2>🐷 Копилки</h2>
+      <h2>🐷 Копилки<button type="button" class="help" data-help="saves" aria-label="Что это?">?</button></h2>
       <p class="hint">Отложенное за месяц, в той валюте, в которой ты его отложил.</p>
       <div id="s-saves"></div>
     </div>
     <div class="card only-env">
-      <h2>⚖️ План и факт</h2>
+      <h2>⚖️ План и факт<button type="button" class="help" data-help="bars" aria-label="Что это?">?</button></h2>
       <div class="chart-box" style="height:280px"><canvas id="c-bars" aria-label="План и факт"></canvas></div>
     </div>
     <div class="card">
-      <h2>📜 Прошлые месяцы</h2>
+      <h2>📜 Прошлые месяцы<button type="button" class="help" data-help="hist" aria-label="Что это?">?</button></h2>
       <div class="chart-box" style="height:170px"><canvas id="c-hist" aria-label="Траты по месяцам"></canvas></div>
       <div id="histList"></div>
+    </div>
+    <div class="card">
+      <h2>🧮 Сводная таблица<button type="button" class="help" data-help="table" aria-label="Что это?">?</button></h2>
+      <div class="tbl-wrap"><table class="tbl" id="sumTbl"></table></div>
+      <button type="button" class="btn ghost" id="exportBtn">📤 Выгрузить все траты в Excel</button>
     </div>
   </section>
 
   <!-- КОНВЕРТЫ / КАТЕГОРИИ -->
   <section class="panel" id="p-env" role="tabpanel" hidden>
     <div class="card only-env">
-      <h2>💰 Доход и обязательные платежи</h2>
+      <h2>💰 Доход и обязательные платежи<button type="button" class="help" data-help="income" aria-label="Что это?">?</button></h2>
       <div class="row"><label for="income">Доход семьи в месяц, <span class="cs">₽</span></label><input type="number" id="income" min="0" step="1000"></div>
       <div class="row"><label for="rent">Жильё (аренда, ипотека, ЖКУ)</label><input type="number" id="rent" min="0" step="500"></div>
       <div class="row"><label for="loans">Кредиты и рассрочки</label><input type="number" id="loans" min="0" step="500"></div>
@@ -290,7 +391,7 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
       <button type="button" class="btn" id="fix" hidden>🪄 Выровнять до 100% автоматически</button>
     </div>
     <div class="card">
-      <h2 id="envTitle">✉️ Конверты</h2>
+      <h2><span id="envTitle">✉️ Конверты</span><button type="button" class="help" data-help="envs" aria-label="Что это?">?</button></h2>
       <p class="hint only-simple">Нажми на картинку или название, чтобы поменять категорию. 🗑 — удалить ненужную.</p>
       <p class="hint only-env">Впиши сумму или двигай ползунок. Нажми на картинку или название, чтобы поменять. Стрелка ▲▼ — тратишь больше или меньше, чем к этому дню прошлого месяца.</p>
       <div id="envs"></div>
@@ -304,7 +405,7 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
       </div>
     </div>
     <div class="card only-env">
-      <h2>↔️ Перенести между конвертами</h2>
+      <h2>↔️ Перенести между конвертами<button type="button" class="help" data-help="transfer" aria-label="Что это?">?</button></h2>
       <p class="hint">Не хватает в одном конверте — возьми из другого. Сумма плана переедет.</p>
       <div class="transfer">
         <select id="trFrom" aria-label="Откуда"></select>
@@ -313,20 +414,12 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
         <button type="button" class="btn full" id="trGo">Перенести</button>
       </div>
     </div>
-    <div class="card">
-      <h2>⚙️ Настройки</h2>
-      <div class="row"><label for="cur">💱 Главная валюта</label><select id="cur" aria-label="Главная валюта"></select></div>
-      <div class="row"><label for="startDay">📅 Месяц начинается с</label><select id="startDay" aria-label="День начала месяца"></select></div>
-      <p class="hint">Траты в других валютах пересчитываются по курсу сами. Начало месяца можно поставить на день зарплаты.</p>
-      <button type="button" class="btn ghost" id="rerunWiz">🧭 Пройти настройку заново</button>
-      <button type="button" class="btn clear" id="clearEx">🧹 Очистить всё и начать с нуля</button>
-    </div>
   </section>
 
   <!-- ТРАТЫ -->
   <section class="panel" id="p-tx" role="tabpanel" hidden>
     <div class="card">
-      <h2>➕ Добавить трату</h2>
+      <h2>➕ Добавить трату<button type="button" class="help" data-help="add" aria-label="Что это?">?</button></h2>
       <form class="add" id="addForm">
         <div class="sumrow"><input type="number" id="a-sum" min="0.01" step="0.01" inputmode="decimal" placeholder="Сумма" required><select id="a-cur" aria-label="Валюта"></select></div>
         <select id="a-env" aria-label="Категория"></select>
@@ -336,7 +429,7 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
       </form>
     </div>
     <div class="card">
-      <h2 id="txTitle">🧾 Траты за месяц</h2>
+      <h2><span id="txTitle">🧾 Траты за месяц</span><button type="button" class="help" data-help="txlist" aria-label="Что это?">?</button></h2>
       <p class="hint">Нажми на трату, чтобы изменить сумму, дату или категорию.</p>
       <div id="txList"></div>
     </div>
@@ -358,10 +451,46 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
       <div id="meals"></div>
     </div>
     <div class="card">
-      <h2>🛒 Список покупок на неделю</h2>
+      <h2>🛒 Список покупок на неделю<button type="button" class="help" data-help="shop" aria-label="Что это?">?</button></h2>
       <div class="prog"><span id="shopProg"></span><span>отмечайте прямо в магазине</span></div>
       <div class="bar" style="--c:var(--accent)"><i id="shopBar"></i></div>
       <div class="shop" id="shop"></div>
+    </div>
+  </section>
+
+  <!-- НАСТРОЙКИ -->
+  <section class="panel" id="p-set" hidden>
+    <div class="card">
+      <h2>💱 Валюта и месяц</h2>
+      <div class="row"><label for="cur">Главная валюта</label><select id="cur" aria-label="Главная валюта"></select></div>
+      <div class="row"><label for="startDay">Месяц начинается с</label><select id="startDay" aria-label="День начала месяца"></select></div>
+      <p class="hint">Траты в других валютах пересчитываются по курсу сами. Начало месяца удобно поставить на день зарплаты.</p>
+    </div>
+    <div class="card">
+      <h2>🔔 Напоминания</h2>
+      <p class="hint">Бот напишет тебе в Telegram в выбранное время.</p>
+      <div class="sw-row"><div class="lbl">☀️ Утром<small>сколько можно потратить сегодня</small></div><input type="time" id="nmT" value="09:00"><label class="switch"><input type="checkbox" id="nmOn" aria-label="Утреннее напоминание"><span></span></label></div>
+      <div class="sw-row"><div class="lbl">🌙 Вечером<small>итог дня и «всё записал?»</small></div><input type="time" id="neT" value="21:00"><label class="switch"><input type="checkbox" id="neOn" aria-label="Вечернее напоминание"><span></span></label></div>
+    </div>
+    <div class="card">
+      <h2>🎨 Оформление</h2>
+      <div class="seg" id="themeMode"><button type="button" data-tm="auto">Как в Telegram</button><button type="button" data-tm="light">☀️ Светлая</button><button type="button" data-tm="dark">🌙 Тёмная</button></div>
+      <div class="swatches" id="accents"></div>
+    </div>
+    <div class="card">
+      <h2>📚 Помощь</h2>
+      <div class="btn-row"><button type="button" class="btn ghost" id="tourBtn">🎓 Обучение</button><button type="button" class="btn ghost" id="demoBtn">👀 Пример</button></div>
+      <button type="button" class="btn ghost" id="rerunWiz">🧭 Настроить заново</button>
+    </div>
+    <div class="card">
+      <h2>💬 Отзыв и идеи</h2>
+      <textarea id="fbText" maxlength="1500" placeholder="Что неудобно, чего не хватает, что понравилось…"></textarea>
+      <button type="button" class="btn" id="fbSend">Отправить</button>
+    </div>
+    <div class="card">
+      <h2>🧹 Сброс</h2>
+      <p class="hint">Удалит все траты, доход и суммы конвертов. Названия категорий останутся.</p>
+      <button type="button" class="btn clear" id="clearEx">🧹 Очистить всё и начать с нуля</button>
     </div>
   </section>
 </div>
@@ -391,7 +520,6 @@ const lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
 const parseJ=s=>{try{return s?JSON.parse(s):null}catch(e){return null}};
 function boot(){
   if(inTG){try{tg.ready();tg.expand();document.documentElement.setAttribute('data-theme',tg.colorScheme==='dark'?'dark':'light');
-    tg.onEvent('themeChanged',()=>document.documentElement.setAttribute('data-theme',tg.colorScheme==='dark'?'dark':'light'));
     try{tg.setHeaderColor(tg.colorScheme==='dark'?'#12151d':'#f3f5f9');tg.setBackgroundColor(tg.colorScheme==='dark'?'#12151d':'#f3f5f9')}catch(e){}}catch(e){}}
   const local=()=>parseJ(lsGet(SKEY))||parseJ(lsGet(OLDKEY));
   const fromServer=useServer?api('GET').then(r=>r&&r.state?r.state:null).catch(()=>null):Promise.resolve(null);
@@ -424,6 +552,7 @@ const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
 
 /* ---------- состояние ---------- */
 let S=migrate(RAW);
+S.notif=S.notif||{m:false,mt:'09:00',e:true,et:'21:00'};S.theme=S.theme||{mode:'auto',accent:'mint'};
 function sampleTx(){
   const P0=periodOf(0,1), P1=periodOf(-1,1), out=[]; let id=1;
   const base=[[1,'food',2400,'Закупка на неделю'],[1,'safe',3800,'Перевод в копилку'],[1,'goal',3800,'Перевод в копилку'],[2,'transport',1500,'Проездной'],[3,'kids',1200,'Кружок рисования'],[4,'food',850,'Овощи и фрукты'],[5,'fun',700,'Кино'],[6,'home',900,'Бытовая химия'],[7,'food',2100,'Закупка на неделю'],[8,'clothes',2400,'Ботинки ребёнку'],[9,'kids',2600,'Оплата садика'],[10,'food',600,'Молоко, хлеб'],[11,'fun',450,'Кофе'],[12,'food',1950,'Закупка на неделю'],[13,'health',650,'Аптека'],[14,'food',700,'Фрукты'],[15,'transport',300,'Такси'],[17,'food',2300,'Закупка на неделю'],[19,'fun',1600,'Кафе'],[21,'food',2000,'Закупка на неделю'],[24,'kids',900,'Книжки'],[26,'food',1800,'Закупка на неделю'],[28,'home',500,'Мелочи для дома']];
@@ -439,7 +568,7 @@ function fromTpl(name,free){
 function migrate(r){
   if(r&&r.v===2)return r;
   const st={v:2,mode:'env',cur:'RUB',start:1,income:70000,rent:25000,loans:7000,cats:fromTpl('family',38000),tx:[],people:4,checked:{},rates:null,onboarded:false,demo:true};
-  if(!r){st.cats.find(c=>c.id==='goal').before=22000;st.tx=sampleTx();st.fresh=true;return st}
+  if(!r){st.demo=false;st.fresh=true;st.income=st.rent=st.loans=0;st.cats=fromTpl('family',0);return st}
   st.onboarded=true;st.demo=false;
   ['income','rent','loans','people','checked','mode','cur','rates'].forEach(k=>{if(r[k]!=null)st[k]=r[k]});
   st.cats.forEach(c=>{if(r.a&&r.a[c.id]!=null)c.amt=r.a[c.id];if(r.n&&r.n[c.id])c.name=r.n[c.id];if(r.i&&r.i[c.id])c.ic=r.i[c.id]});
@@ -462,7 +591,7 @@ const $=id=>document.getElementById(id);
 const num=id=>Math.max(0,parseFloat($(id).value)||0);
 const toast=t=>{const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),2000)};
 const TRANSIENT=new Set(['spent','prev','all','p']);
-function save(){S.rates=RATES;S.tz=-new Date().getTimezoneOffset();const str=JSON.stringify(S,(k,v)=>TRANSIENT.has(k)?undefined:v);lsSet(SKEY,str);cloud.set(str);server.set(str)}
+function save(){if(S.demo)return;S.rates=RATES;S.tz=-new Date().getTimezoneOffset();const str=JSON.stringify(S,(k,v)=>TRANSIENT.has(k)?undefined:v);lsSet(SKEY,str);cloud.set(str);server.set(str)}
 
 /* ---------- периоды ---------- */
 function periodOf(off,sd=S?S.start:1){
@@ -522,6 +651,7 @@ function render(){
   $('pNext').disabled=OFF>=0; $('pastNote').hidden=OFF===0;
   $('txTitle').textContent=`🧾 Траты · ${P.short}`;
   $('demoBadge').hidden=!S.demo;
+  $('emptyStart').hidden=!!S.tx.length||S.demo;
   /* доход */
   ['income','rent','loans'].forEach(k=>{if(document.activeElement!==$(k))$(k).value=S[k]||0});
   $('free').textContent=fmt(free);
@@ -566,6 +696,7 @@ function render(){
   set('k-save',fmt(saved)); set('k-save-chip','за этот месяц');
   const mood=!P.cur?(spent<=plan?['🏆','Месяц закрыт в плюсе',`Потрачено ${fmt(spent)} из ${fmt(plan)}. Сэкономлено ${fmt(plan-spent)}.`]:['😵‍💫','Месяц закрыт с перерасходом',`Потрачено ${fmt(spent)} при плане ${fmt(plan)}.`])
    :!plan?['🙂','Задай план по конвертам','Впиши доход и суммы во вкладке «Конверты», и я буду следить за темпом.']
+   :!txP.some(t=>!byId(t.env).save)?['🙂','Трат пока нет',`На месяц у тебя ${fmt(plan)}, это ${fmt(normDaily)} в день. Записывай траты, и я буду следить за темпом.`]
    :fore>plan*1.1?['😱','Тревога! Деньги тают быстро',`При таком темпе к концу месяца не хватит ${fmt(fore-plan)}. Притормози на пару дней.`]
    :diff<0?['😬','Чуть разогнались',`Ты на ${fmt(-diff)} впереди плана. Сегодня лучше уложиться в ${fmt(daily)}.`]
    :diff>plan*0.1?['🤑','Молодец, бюджет в плюсе!',`Уже сэкономлено ${fmt(diff)} к этому дню. Можно отправить часть в копилку 🐷`]
@@ -575,7 +706,7 @@ function render(){
   const food=S.cats.find(c=>c.id==='food');$('foodBudget').innerHTML=food&&food.amt?`В конверте «${esc(food.name)}» на неделю: <b>${fmt(food.amt/4.345)}</b>`:'';
   renderSimple(P,txP,txPP);
   drawCharts(P,txP,plan,sc);
-  renderHistory();
+  renderHistory();renderTable();
   renderTx(P,txP);
   save();
 }
@@ -791,7 +922,7 @@ $('trGo').addEventListener('click',()=>{
 const curOpts=Object.entries(CUR).map(([c,[s2,n]])=>`<option value="${c}">${s2} ${n}</option>`).join('');
 $('cur').innerHTML=curOpts;$('a-cur').innerHTML=curOpts;
 $('startDay').innerHTML=[...Array(28)].map((_,i)=>`<option value="${i+1}">${i+1}-го числа</option>`).join('');
-function syncSettings(){$('cur').value=S.cur;$('a-cur').value=S.cur;$('startDay').value=S.start||1}
+function syncSettings(){$('cur').value=S.cur;$('a-cur').value=S.cur;$('startDay').value=S.start||1;if(typeof syncNotif==='function')syncNotif()}
 function setMain(nc){
   const old=S.cur;if(nc===old)return;
   if(conv(1,old,nc)==null){toast('😕 Нет курса для этой валюты');$('cur').value=old;return}
@@ -814,14 +945,17 @@ $('clearEx').addEventListener('click',()=>{
   if(!clearArmed){btn.textContent='⚠️ Точно стереть всё? Нажми ещё раз';clearArmed=setTimeout(()=>{clearArmed=null;btn.textContent='🧹 Очистить всё и начать с нуля'},4000);return}
   clearTimeout(clearArmed);clearArmed=null;btn.textContent='🧹 Очистить всё и начать с нуля';
   deletedIds.push(...S.tx.map(t=>t.id));S.tx=[];S.checked={};S.income=S.rent=S.loans=0;S.demo=false;
-  S.cats.forEach(c=>{c.amt=0;c.before=0;c.ms=0});OFF=0;buildCats();render();renderFood();openWizard();
+  S.cats.forEach(c=>{c.amt=0;c.before=0;c.ms=0});OFF=0;buildCats();render();renderFood();openWizard(1);
 });
-$('rerunWiz').addEventListener('click',()=>openWizard());
-$('demoBadge').addEventListener('click',()=>openWizard());
+$('rerunWiz').addEventListener('click',()=>openWizard(1));
+$('exitDemo').addEventListener('click',()=>{exitDemo();toast('👋 Вернулись к твоим данным')});
+$('demoBtn').addEventListener('click',()=>enterDemo());
+$('tourBtn').addEventListener('click',()=>startTour());
 
 /* ---------- вкладки ---------- */
 function selectTab(id){
   document.querySelectorAll('[role=tab]').forEach(b=>{const on=b.id===id;b.setAttribute('aria-selected',on);$(b.getAttribute('aria-controls')).hidden=!on});
+  $('p-set').hidden=true;$('gearBtn').setAttribute('aria-pressed',false);
   TAB=$(id).getAttribute('aria-controls'); EDIT=null;
   if(id==='t-over')Object.values(charts).forEach(c=>c.resize());
 }
@@ -861,22 +995,29 @@ $('pMinus').addEventListener('click',()=>{if(S.people>1){S.people--;renderFood()
 $('pPlus').addEventListener('click',()=>{if(S.people<8){S.people++;renderFood();save()}});
 
 /* ---------- мастер старта ---------- */
-const W={step:1,mode:'env',cur:'RUB',start:1,tpl:'family',income:'',rent:'',loans:'',pick:{}};
-function openWizard(){
-  Object.assign(W,{step:1,mode:S.mode||'env',cur:S.cur||'RUB',start:S.start||1,tpl:'family',income:S.income||'',rent:S.rent||'',loans:S.loans||''});
+const ANIM=`<div class="anim" aria-hidden="true"><div class="chat"><div class="msg me">кофе 300</div><div class="msg bot">☕ −300 ₽ → «Кафе»<br>Осталось в конверте: 2 700 ₽</div></div>
+  <div class="down">⬇️</div><div class="mini"><div class="t"><span>☕ Кафе</span><b>300 ₽ из 3 000 ₽</b></div><div class="mbar"><i></i></div></div></div>`;
+const W={step:0,mode:'env',cur:'RUB',start:1,tpl:'family',income:'',rent:'',loans:'',pick:{}};
+function openWizard(step=1){
+  if(S.demo)exitDemo(true);
+  Object.assign(W,{step,mode:S.mode||'env',cur:S.cur||'RUB',start:S.start||1,tpl:'family',income:S.income||'',rent:S.rent||'',loans:S.loans||''});
   W.pick=Object.fromEntries(TPL.simple.map(c=>[c.id,true]));
   $('wiz').hidden=false;document.body.style.overflow='hidden';drawWizard();
 }
 function closeWizard(){$('wiz').hidden=true;document.body.style.overflow=''}
 function drawWizard(){
-  const total=3, head=`<div class="step">Шаг ${W.step} из ${total}</div>`;
+  const head=`<div class="step">Шаг ${W.step} из 3</div>`;
   let h='';
-  if(W.step===1){
-    h=`${head}<h2>👋 Привет! Как будешь пользоваться?</h2><p>Это можно поменять в любой момент.</p>
+  if(W.step===0){
+    h=`<div class="hello"><div class="e">💸</div><h2>Бюджет, который ведётся сам</h2><p>Пиши траты боту как другу: «кофе 300», «вчера такси 35 ю». Я всё посчитаю и покажу, куда уходят деньги.</p></div>
+    ${ANIM}
+    <button type="button" class="btn" data-wnext>Начать настройку → <small style="opacity:.8;font-weight:500">1 минута</small></button>
+    <button type="button" class="btn ghost" data-wdemo>👀 Сначала посмотреть пример</button>`;
+  }else if(W.step===1){
+    h=`${head}<h2>Как будешь пользоваться?</h2><p>Это можно поменять в любой момент кнопками вверху.</p>
     <button type="button" class="choice" data-wmode="env" aria-pressed="${W.mode==='env'}"><span class="e">💌</span><div><b>Бюджет на конвертах</b><span>Делю доход по конвертам: продукты, транспорт, копилка. Слежу, чтобы хватило до конца месяца.</span></div></button>
     <button type="button" class="choice" data-wmode="simple" aria-pressed="${W.mode==='simple'}"><span class="e">🧾</span><div><b>Просто учёт трат</b><span>Без планов. Записываю траты в любой валюте и смотрю, куда уходят деньги.</span></div></button>
-    <div class="wiz-nav"><span></span><button type="button" class="btn" data-wnext>Дальше →</button></div>
-    ${S.demo||S.fresh?'<button type="button" class="linkbtn" data-wskip>Сначала посмотреть пример</button>':'<button type="button" class="linkbtn" data-wskip>Закрыть</button>'}`;
+    <div class="wiz-nav"><button type="button" class="btn ghost" data-wclose>${S.onboarded?'Закрыть':'← Назад'}</button><button type="button" class="btn" data-wnext>Дальше →</button></div>`;
   }else if(W.step===2){
     h=`${head}<h2>💱 В какой валюте считать итоги?</h2><p>Траты можно писать в любой валюте, пересчитаю сам.</p>
     <div class="curgrid">${Object.entries(CUR).map(([c,[s2,n]])=>`<button type="button" data-wcur="${c}" aria-pressed="${W.cur===c}">${s2}<small>${n}</small></button>`).join('')}</div>
@@ -885,10 +1026,10 @@ function drawWizard(){
     <div class="wiz-nav"><button type="button" class="btn ghost" data-wback>← Назад</button><button type="button" class="btn" data-wnext>Дальше →</button></div>`;
   }else if(W.mode==='env'){
     const s=sym(W.cur);
-    h=`${head}<h2>💰 Доход и конверты</h2><p>Впиши примерно, потом можно поправить.</p>
-    <div class="row"><label for="wInc">Доход в месяц, ${s}</label><input type="number" id="wInc" min="0" step="1000" value="${W.income}" placeholder="0"></div>
-    <div class="row"><label for="wRent">Жильё и ЖКУ, ${s}</label><input type="number" id="wRent" min="0" step="500" value="${W.rent}" placeholder="0"></div>
-    <div class="row"><label for="wLoans">Кредиты, ${s}</label><input type="number" id="wLoans" min="0" step="500" value="${W.loans}" placeholder="0"></div>
+    h=`${head}<h2>💰 Доход и конверты</h2><p>Впиши примерно, потом можно поправить. Я сам раздам деньги по конвертам.</p>
+    <div class="row"><label for="wInc">Доход в месяц, ${s}</label><input type="number" id="wInc" min="0" step="1000" value="${W.income}" placeholder="0" inputmode="numeric"></div>
+    <div class="row"><label for="wRent">Жильё и ЖКУ, ${s}</label><input type="number" id="wRent" min="0" step="500" value="${W.rent}" placeholder="0" inputmode="numeric"></div>
+    <div class="row"><label for="wLoans">Кредиты, ${s}</label><input type="number" id="wLoans" min="0" step="500" value="${W.loans}" placeholder="0" inputmode="numeric"></div>
     <p class="hint">Набор конвертов:</p>
     <div class="tpl">${[['family','👨‍👩‍👧','Семья'],['couple','💑','Пара'],['solo','🙋','Для себя']].map(([k,e,n])=>`<button type="button" data-wtpl="${k}" aria-pressed="${W.tpl===k}"><span class="e">${e}</span>${n}</button>`).join('')}</div>
     <p class="hint">${TPL[W.tpl].map(c=>c.ic+' '+c.name).join(' · ')}</p>
@@ -909,7 +1050,8 @@ $('wizIn').addEventListener('click',e=>{
   else if(t.dataset.wpick!=null){W.pick[t.dataset.wpick]=t.checked}
   else if('wnext' in t.dataset){keep();W.step++;drawWizard();$('wiz').scrollTop=0}
   else if('wback' in t.dataset){keep();W.step--;drawWizard()}
-  else if('wskip' in t.dataset){S.fresh=false;closeWizard();save()}
+  else if('wclose' in t.dataset){if(S.onboarded)closeWizard();else{W.step=0;drawWizard()}}
+  else if('wdemo' in t.dataset){closeWizard();enterDemo()}
   else if('wdone' in t.dataset){keep();finishWizard()}
 });
 function finishWizard(){
@@ -919,16 +1061,139 @@ function finishWizard(){
   S={...S,v:2,mode:W.mode,cur:W.cur,start:W.start,income:inc,rent,loans,tx:[],checked:{},onboarded:true,demo:false,fresh:false};
   S.cats=W.mode==='env'?fromTpl(W.tpl,Math.max(0,inc-rent-loans)):fromTpl('simple',0).filter(c=>W.pick[c.id]);
   OFF=0;closeWizard();buildCats();syncSettings();selectTab('t-over');render();renderFood();
-  toast(W.mode==='env'?'🚀 Готово! Пиши траты боту или во вкладке «Траты»':'🚀 Готово! Пиши боту, например «еда 50 ю»');burst(['🎉','✨','🚀','💰'],null,null,30);
+  burst(['🎉','✨','🚀','💰'],null,null,30);
+  if(!S.toured)setTimeout(startTour,700);else toast('🚀 Готово! Пиши траты боту или во вкладке «Траты»');
+}
+
+/* ---------- пример ---------- */
+let REAL=null;
+function enterDemo(){
+  if(S.demo)return;
+  REAL=S;
+  const d={...REAL,v:2,mode:'env',cur:'RUB',start:1,income:70000,rent:25000,loans:7000,cats:fromTpl('family',38000),checked:{},demo:true,onboarded:true,fresh:false};
+  d.cats.find(c=>c.id==='goal').before=22000;
+  S=d;S.tx=sampleTx();OFF=0;buildCats();syncSettings();selectTab('t-over');render();renderFood();window.scrollTo({top:0});
+  toast('👀 Это пример. Нажимай всё, что хочешь — твои данные не изменятся');
+}
+function exitDemo(silent){
+  if(!S.demo)return;
+  S=REAL||migrate(null);REAL=null;OFF=0;buildCats();syncSettings();render();renderFood();
+  if(!silent&&!S.onboarded)openWizard(0);
+}
+
+/* ---------- подсказки «?» ---------- */
+const HELP={
+  days:['📅 По дням','Сколько ты тратил в каждый день месяца. Высокие столбики — дорогие дни. Сегодняшний подсвечен.'],
+  pace:['📈 Темп трат','Пунктир — сколько можно было потратить к каждому дню, чтобы уложиться в план. Твоя линия ниже пунктира — ты в плюсе, выше — тратишь быстрее плана.'],
+  donut:['🍩 Куда уходят деньги','Доля каждой категории во всех тратах за месяц. Сразу видно, что съедает больше всего.'],
+  saves:['🐷 Копилки','Сколько ты отложил за месяц. Каждая валюта показана отдельно, а внизу — общая сумма в главной валюте.','Чтобы отложить, напиши боту «отложил 5к юаней» или выбери копилку при добавлении траты.'],
+  bars:['⚖️ План и факт','Серая полоса — сколько ты выделил на конверт, цветная — сколько уже потратил. Красная — перерасход.'],
+  hist:['📜 Прошлые месяцы','Сколько ушло в каждом месяце и сколько отложено. Нажми на месяц, чтобы открыть его целиком.'],
+  table:['🧮 Сводная таблица','Все категории по месяцам в одной таблице. Листай вбок. Кнопка ниже пришлёт тебе в чат файл со всеми тратами — он открывается в Excel и Google Таблицах.'],
+  income:['💰 Доход и платежи','Впиши доход семьи и обязательные платежи: жильё и кредиты. Остаток — это деньги, которые ты раскладываешь по конвертам.'],
+  envs:['✉️ Конверты и категории','В конвертах-тратах — сколько выделено на месяц и сколько осталось. В копилках — сколько откладываешь и сколько накоплено на цель.','Нажми на картинку или название, чтобы поменять. 🗑 — удалить. Внизу можно добавить свою категорию.'],
+  transfer:['↔️ Перенос','Не хватает в одном конверте — возьми из другого. Например, из «Одежды» в «Кафе». Общий план не меняется, просто деньги переезжают.'],
+  add:['➕ Добавить трату','Сумма, валюта, категория и дата. Можно записать задним числом.','Ещё быстрее — написать боту: «кофе 300», «вчера такси 35 ю», «15.10 кино 500».'],
+  txlist:['🧾 Траты','Все траты месяца по дням. Нажми на любую — исправишь сумму, категорию, дату или удалишь. 🤖 — записано через бота.'],
+  shop:['🛒 Список покупок','Список на неделю под меню выше. Отмечай галочками прямо в магазине. Количество пересчитывается под число людей в семье.']
+};
+function sheet(title,text,ex){
+  const bg=document.createElement('div');bg.className='sheet-bg';
+  bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><h3>${title}</h3><p>${text}</p>${ex?`<div class="ex">💡 ${ex}</div>`:''}<button type="button" class="btn">Понятно</button></div>`;
+  bg.addEventListener('click',e=>{if(e.target===bg||e.target.closest('.btn'))bg.remove()});
+  document.body.appendChild(bg);
+}
+document.addEventListener('click',e=>{const h=e.target.closest('[data-help]');if(!h)return;const x=HELP[h.dataset.help];if(x)sheet(x[0],x[1],x[2])});
+
+/* ---------- обучение ---------- */
+const TOUR=[
+  ['.modes','Два режима','💌 Конверты — делишь доход и следишь за остатками. 🧾 Просто учёт — только записываешь траты. Переключай, когда хочешь.'],
+  ['#t-over','📊 Обзор','Главное за месяц: сколько потрачено, сколько можно в день, куда уходят деньги.'],
+  ['#t-env','✉️ Конверты','Твои конверты или категории: суммы, копилки, цели. Тут же можно добавить свою категорию.'],
+  ['#t-tx','🧾 Траты','Добавляй траты вручную. Нажми на любую — исправишь или удалишь.'],
+  ['.period','📅 Месяцы','Листай стрелками и смотри прошлые месяцы.'],
+  ['#gearBtn','⚙️ Настройки','Валюта, напоминания, цвета, обучение заново и сброс.'],
+  ['.help','❓ Подсказки','Не понятно, что за блок? Жми «?» рядом с заголовком.'],
+  [null,'🤖 Главная фишка','Пиши траты прямо боту в чат, как другу. Они сами появятся здесь, с графиками и остатками.']
+];
+let TI=0;
+function startTour(){if(S.demo)exitDemo(true);selectTab('t-over');window.scrollTo({top:0});TI=0;
+  ['tour-block','tour-hole','tour-tip'].forEach(c=>{let el=document.querySelector('.'+c);if(!el){el=document.createElement('div');el.className=c;document.body.appendChild(el)}});
+  drawTour()}
+function endTour(){document.querySelectorAll('.tour-block,.tour-hole,.tour-tip').forEach(x=>x.remove());S.toured=true;save()}
+function drawTour(){
+  const [sel,t,p]=TOUR[TI], hole=document.querySelector('.tour-hole'), tip=document.querySelector('.tour-tip');
+  const el=sel?[...document.querySelectorAll(sel)].find(x=>x.offsetParent):null;
+  if(el){el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect(),pd=6;
+    Object.assign(hole.style,{display:'block',left:r.left-pd+'px',top:r.top-pd+'px',width:r.width+pd*2+'px',height:r.height+pd*2+'px'});
+    const below=r.bottom+16+200<innerHeight; tip.style.top=(below?r.bottom+16:Math.max(12,r.top-16-tip.offsetHeight||170))+'px';
+  }else{hole.style.display='none';tip.style.top=Math.max(20,innerHeight*0.2)+'px'}
+  tip.innerHTML=`<b>${t}</b><p>${p}</p>${sel?'':ANIM}<div class="row2"><small>${TI+1} из ${TOUR.length}</small>${TI<TOUR.length-1?'<button type="button" class="tour-skip">Пропустить</button>':''}<button type="button" class="tour-next">${TI<TOUR.length-1?'Дальше →':'Понятно 👍'}</button></div>`;
+  if(el){const r=el.getBoundingClientRect();const below=r.bottom+16+tip.offsetHeight<innerHeight;tip.style.top=(below?r.bottom+16:Math.max(12,r.top-16-tip.offsetHeight))+'px'}
+  tip.querySelector('.tour-next').onclick=()=>{TI++;if(TI>=TOUR.length)endTour();else drawTour()};
+  const sk=tip.querySelector('.tour-skip');if(sk)sk.onclick=endTour;
+}
+
+/* ---------- настройки ---------- */
+function openSettings(){
+  const open=$('p-set').hidden;
+  if(!open){selectTab('t-over');return}
+  document.querySelectorAll('[role=tab]').forEach(b=>{b.setAttribute('aria-selected',false);$(b.getAttribute('aria-controls')).hidden=true});
+  $('p-set').hidden=false;$('gearBtn').setAttribute('aria-pressed',true);TAB='p-set';syncSettings();window.scrollTo({top:0,behavior:'smooth'});
+}
+$('gearBtn').addEventListener('click',openSettings);
+const ACCENTS=[['mint','Мята','#2a9d8f'],['lav','Лаванда','#6f5fd8'],['peach','Персик','#e0743c'],['ocean','Океан','#2f6fd6'],['sakura','Сакура','#d24f84'],['graphite','Графит','#3d4554']];
+$('accents').innerHTML=ACCENTS.map(([k,n,c])=>`<button type="button" data-acc="${k}"><i style="background:${c}"></i>${n}</button>`).join('');
+function applyTheme(){
+  const th=S.theme||{mode:'auto',accent:'mint'}, root=document.documentElement;
+  const auto=inTG?tg.colorScheme:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+  const mode=th.mode==='auto'?auto:th.mode;
+  if(root.getAttribute('data-theme')!==mode)root.setAttribute('data-theme',mode);
+  ACCENTS.forEach(([k])=>root.classList.toggle('th-'+k,th.accent===k&&k!=='mint'));
+  document.querySelectorAll('#themeMode [data-tm]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tm===th.mode));
+  document.querySelectorAll('[data-acc]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.acc===th.accent));
+  if(inTG){try{const bg=css('--bg');tg.setHeaderColor(bg);tg.setBackgroundColor(bg)}catch(e){}}
+}
+$('themeMode').addEventListener('click',e=>{const b=e.target.closest('[data-tm]');if(!b)return;S.theme={...S.theme,mode:b.dataset.tm};applyTheme();save()});
+$('accents').addEventListener('click',e=>{const b=e.target.closest('[data-acc]');if(!b)return;S.theme={...S.theme,accent:b.dataset.acc};applyTheme();Object.values(charts).forEach(c=>c.destroy());charts={};render();burst(['🎨','✨'],e.clientX,e.clientY,10)});
+function syncNotif(){const n=S.notif;$('nmOn').checked=n.m;$('neOn').checked=n.e;$('nmT').value=n.mt;$('neT').value=n.et;$('nmT').disabled=!n.m;$('neT').disabled=!n.e}
+['nmOn','neOn','nmT','neT'].forEach(id=>$(id).addEventListener('change',()=>{
+  S.notif={m:$('nmOn').checked,mt:$('nmT').value||'09:00',e:$('neOn').checked,et:$('neT').value||'21:00'};syncNotif();save();
+  toast(!S.notif.m&&!S.notif.e?'🔕 Напоминания выключены':`🔔 Напомню${S.notif.m?' утром в '+S.notif.mt:''}${S.notif.m&&S.notif.e?' и':''}${S.notif.e?' вечером в '+S.notif.et:''}`);
+}));
+$('fbSend').addEventListener('click',()=>{
+  const text=$('fbText').value.trim();if(text.length<3){toast('Напиши пару слов 🙂');return}
+  if(!useServer){toast('Отзыв можно отправить только из Telegram');return}
+  fetch('/api/feedback',{method:'POST',headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:JSON.stringify({text})})
+   .then(r=>{if(!r.ok)throw 0;$('fbText').value='';toast('💌 Спасибо! Отзыв отправлен');burst(['💌','✨'])}).catch(()=>toast('😕 Не отправилось, попробуй ещё раз'));
+});
+$('exportBtn').addEventListener('click',()=>{
+  if(S.demo){toast('В примере выгрузки нет — попробуй со своими тратами');return}
+  if(!useServer){toast('Выгрузка работает из Telegram: файл придёт в чат с ботом');return}
+  save();toast('📤 Готовлю файл…');
+  setTimeout(()=>fetch('/api/export',{method:'POST',headers:{'X-Init-Data':tg.initData}}).then(r=>{if(!r.ok)throw 0;toast('📤 Файл отправлен в чат с ботом');haptic('ok')}).catch(()=>toast('😕 Не получилось, попробуй ещё раз')),900);
+});
+
+/* ---------- сводная таблица ---------- */
+function renderTable(){
+  const ps=[];for(let o=0;o>=-11;o--){const P=periodOf(o);if(o===0||S.tx.some(t=>inP(t,P)))ps.push(P);if(ps.length>=6)break}
+  ps.reverse();
+  const val=(c,P)=>S.tx.filter(t=>t.env===c.id&&inP(t,P)).reduce((a,t)=>a+t.sum,0);
+  const cell=v=>v?`<td>${Math.round(v).toLocaleString('ru-RU')}</td>`:'<td class="z">—</td>';
+  const head=`<tr><th>${sym(S.cur)}</th>${ps.map(P=>`<th>${P.short.length>12?P.short.slice(0,6):P.short.slice(0,3)}</th>`).join('')}<th>Всего</th></tr>`;
+  const row=c=>{const v=ps.map(P=>val(c,P));return `<tr><td>${c.ic} ${esc(c.name)}</td>${v.map(cell).join('')}<td><b>${Math.round(v.reduce((a,x)=>a+x,0)).toLocaleString('ru-RU')}</b></td></tr>`};
+  const tot=ps.map(P=>spendCats().reduce((a,c)=>a+val(c,P),0));
+  $('sumTbl').innerHTML=head+spendCats().map(row).join('')+`<tr class="tot"><td>💸 Потрачено</td>${tot.map(cell).join('')}<td>${Math.round(tot.reduce((a,x)=>a+x,0)).toLocaleString('ru-RU')}</td></tr>`+saveCats().map(row).join('');
 }
 
 /* ---------- старт ---------- */
-buildCats();syncSettings();renderFood();render();
-if(S.fresh)openWizard();
+applyTheme();buildCats();syncSettings();renderFood();render();
+if(S.fresh)openWizard(0);
 if(useServer)fetch('/api/rates').then(r=>r.json()).then(j=>{if(j&&j.ok&&j.rates){RATES={...RATES,...j.rates};render()}}).catch(()=>{});
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{Object.values(charts).forEach(c=>c.destroy());charts={};render()});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{applyTheme()});
+try{if(inTG)tg.onEvent('themeChanged',applyTheme)}catch(e){}
 new MutationObserver(()=>{Object.values(charts).forEach(c=>c.destroy());charts={};render()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-function pullServer(){if(!useServer)return;api('GET').then(r=>{if(!r||!r.state||!r.state.tx)return;const have=new Set(S.tx.map(t=>t.id));
+function pullServer(){if(!useServer||S.demo)return;api('GET').then(r=>{if(!r||!r.state||!r.state.tx)return;const have=new Set(S.tx.map(t=>t.id));
   const add=r.state.tx.filter(t=>!have.has(t.id)&&!deletedIds.includes(t.id)).map(t=>({...t,date:t.date||`${t.m}-${pad(t.day||1)}`}));
   if(add.length){S.tx.push(...add);render();toast(`🤖 Из чата добавлено трат: ${add.length}`)}}).catch(()=>{})}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pullServer()});

@@ -14,3 +14,9 @@ class_name = "UserStore"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["UserStore"]
+
+[vars]
+ORIGIN = "https://konverty-budget.cshirzad.workers.dev/"
+
+[triggers]
+crons = ["*/15 * * * *"]

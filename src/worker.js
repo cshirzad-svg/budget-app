@@ -28,6 +28,24 @@ const HELP =
 
 /* ---------- хранилище: один объект на пользователя ---------- */
 export class UserStore extends DurableObject {
+  /* реестр (один экземпляр с именем __registry__) */
+  async regUpdate(uid, patch) {
+    const k = 'u:' + uid;
+    const v = { first: Date.now(), ...((await this.ctx.storage.get(k)) || {}), ...patch };
+    await this.ctx.storage.put(k, v);
+    return v;
+  }
+  async regList() {
+    const m = await this.ctx.storage.list({ prefix: 'u:' });
+    return [...m.entries()].map(([k, v]) => ({ uid: +k.slice(2), ...v }));
+  }
+  async getAdmin() { return (await this.ctx.storage.get('admin')) || null; }
+  async claimAdmin(id) {
+    const a = await this.ctx.storage.get('admin');
+    if (a) return a;
+    await this.ctx.storage.put('admin', id);
+    return id;
+  }
   async getState() {
     return (await this.ctx.storage.get('state')) || null;
   }
@@ -242,7 +260,7 @@ export function period(state, off = 0) {
   const last = new Date(e - 864e5);
   const label = sd === 1 ? MONTHS[s.getUTCMonth()] : `${s.getUTCDate()} ${MON3[s.getUTCMonth()]} – ${last.getUTCDate()} ${MON3[last.getUTCMonth()]}`;
   const elapsed = off === 0 ? Math.round((n - s) / 864e5) + 1 : Math.round((e - s) / 864e5);
-  return { s: ymd(s), e: ymd(e), label, elapsed };
+  return { s: ymd(s), e: ymd(e), label, elapsed, days: Math.round((e - s) / 864e5) };
 }
 const txDate = (t) => t.date || `${t.m || '0000-00'}-${pad2(t.day || 1)}`;
 const inPeriod = (t, P) => { const d = txDate(t); return d >= P.s && d < P.e; };
@@ -298,16 +316,106 @@ function summary(state, envId, tx) {
   return line + (left >= 0 ? `\nОсталось в конверте: ${fmt(left, main)}` : `\n😬 Перерасход: ${fmt(-left, main)}`);
 }
 
+/* ---------- утро / вечер ---------- */
+const sumOf = (list) => list.reduce((a, t) => a + t.sum, 0);
+export function morningText(state) {
+  const main = state.cur || 'RUB', P = period(state);
+  const isSave = (t) => catInfo(t.env, state).save;
+  const txP = (state.tx || []).filter((t) => inPeriod(t, P) && !isSave(t));
+  const spent = sumOf(txP);
+  const plan = getCats(state).filter((c) => !c.save).reduce((a, c) => a + (c.amt || 0), 0);
+  if (state.mode !== 'simple' && plan) {
+    const left = plan - spent, daysLeft = Math.max(1, P.days - P.elapsed + 1);
+    if (left <= 0) return `☀️ Доброе утро! Бюджет месяца уже потрачен, перерасход ${fmt(-left, main)}. Сегодня лучше без лишних трат 💪`;
+    return `☀️ Доброе утро! Сегодня можно потратить до <b>${fmt(left / daysLeft, main)}</b>.\nЗа месяц ушло ${fmt(spent, main)} из ${fmt(plan, main)}.`;
+  }
+  const y = ymd(new Date(todayUTC(state) - 864e5));
+  const ySpent = sumOf((state.tx || []).filter((t) => txDate(t) === y && !isSave(t)));
+  if (!(state.tx || []).length) return '☀️ Доброе утро! Не забывай записывать траты: просто напиши мне, например, <code>кофе 300</code>.';
+  return `☀️ Доброе утро! Вчера ушло ${fmt(ySpent, main)}.\nЗа месяц: ${fmt(spent, main)}.`;
+}
+export function eveningText(state) {
+  const main = state.cur || 'RUB', today = todayStr(state);
+  const isSave = (t) => catInfo(t.env, state).save;
+  const list = (state.tx || []).filter((t) => txDate(t) === today && !isSave(t));
+  if (!list.length) return { text: '🌙 Сегодня ни одной записи. День без трат или забыл записать?', empty: true };
+  const by = {};
+  list.forEach((t) => { by[t.env] = (by[t.env] || 0) + t.sum; });
+  const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, v]) => { const c = catInfo(id, state); return `${c.ic} ${c.name} — ${fmt(v, main)}`; });
+  let text = `🌙 Итог дня: <b>${fmt(sumOf(list), main)}</b>\n${top.join('\n')}`;
+  const P = period(state), plan = getCats(state).filter((c) => !c.save).reduce((a, c) => a + (c.amt || 0), 0);
+  if (state.mode !== 'simple' && plan) {
+    const left = plan - sumOf((state.tx || []).filter((t) => inPeriod(t, P) && !isSave(t)));
+    const daysLeft = Math.max(1, P.days - P.elapsed);
+    text += left > 0 ? `\n\nЗавтра можно до ${fmt(left / daysLeft, main)}.` : `\n\n😬 Бюджет месяца превышен на ${fmt(-left, main)}.`;
+  }
+  return { text: text + '\n\nВсё записал? 🙂', empty: false };
+}
+const hm = (t) => { const [h, m] = String(t || '').split(':').map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
+async function runSchedule(env) {
+  const reg = store(env, '__registry__');
+  const users = await reg.regList();
+  for (const u of users) {
+    const n = u.notif;
+    if (!n || (!n.m && !n.e)) continue;
+    const local = new Date(Date.now() + (Number.isFinite(u.tz) ? u.tz : 180) * 60000);
+    const mins = local.getUTCHours() * 60 + local.getUTCMinutes(), today = ymd(local);
+    for (const k of ['m', 'e']) {
+      const at = hm(n[k + 't']);
+      if (!n[k] || at == null || mins < at || mins >= at + 60 || u['last_' + k] === today) continue;
+      try {
+        const state = (await store(env, u.uid).getState()) || {};
+        let body;
+        if (k === 'm') body = { text: morningText(state), reply_markup: { inline_keyboard: [[{ text: '📊 Открыть бюджет', web_app: { url: env.ORIGIN || '' } }]] } };
+        else {
+          const ev = eveningText(state);
+          const kb = ev.empty ? [[{ text: '🧘 Без трат', callback_data: 'ns' }], [{ text: '📊 Открыть бюджет', web_app: { url: env.ORIGIN || '' } }]] : [[{ text: '📊 Открыть бюджет', web_app: { url: env.ORIGIN || '' } }]];
+          body = { text: ev.text, reply_markup: { inline_keyboard: kb } };
+        }
+        if (!env.ORIGIN) delete body.reply_markup;
+        const r = await tg(env, 'sendMessage', { chat_id: u.uid, parse_mode: 'HTML', ...body });
+        const patch = { ['last_' + k]: today };
+        if (!r.ok && r.error_code === 403) patch.notif = { ...n, m: false, e: false };
+        await reg.regUpdate(u.uid, patch);
+      } catch (e) { console.error('schedule', u.uid, e); }
+    }
+  }
+}
+
+/* ---------- выгрузка в Excel (CSV) ---------- */
+export function buildCsv(state) {
+  const main = state.cur || 'RUB';
+  const q = (v) => { const t = String(v ?? ''); return /[;"\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const num = (v) => String(Math.round((v || 0) * 100) / 100).replace('.', ',');
+  const rows = [['Дата', 'Категория', 'Тип', `Сумма, ${main}`, 'Сумма в валюте траты', 'Валюта', 'Комментарий', 'Откуда']];
+  [...(state.tx || [])].sort((a, b) => txDate(a).localeCompare(txDate(b))).forEach((t) => {
+    const c = catInfo(t.env, state);
+    rows.push([txDate(t), `${c.ic} ${c.name}`, c.save ? 'Отложено' : 'Трата', num(t.sum), num(t.orig ?? t.sum), t.cur || main, t.note || '', t.src === 'bot' ? 'бот' : 'приложение']);
+  });
+  return '\ufeff' + rows.map((r) => r.map(q).join(';')).join('\r\n');
+}
+
 /* ---------- Telegram ---------- */
 async function tg(env, method, body) {
-  const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    return await r.json();
+  } catch (e) {
+    console.error('tg', method, e);
+    return { ok: false };
+  }
 }
 const appButton = (origin) => ({ inline_keyboard: [[{ text: '📊 Открыть бюджет', web_app: { url: origin + '/' } }]] });
 
 async function onUpdate(update, env, origin) {
+  if (update.callback_query && update.callback_query.data === 'ns') {
+    const q = update.callback_query;
+    await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Засчитано 🧘' });
+    await tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text: '🧘 День без трат! Так держать 💪', reply_markup: appButton(origin) });
+    return;
+  }
   if (update.callback_query) {
     const q = update.callback_query;
     const uid = q.from.id;
@@ -338,11 +446,33 @@ async function onUpdate(update, env, origin) {
   const uid = msg.from.id, chat = msg.chat.id, text = msg.text.trim();
   const st = store(env, uid);
 
+  const reg = store(env, '__registry__');
+  await reg.regUpdate(uid, { seen: Date.now(), name: msg.from.first_name || '', user: msg.from.username || '' });
   if (text.startsWith('/start') || text.startsWith('/help')) {
     await tg(env, 'sendMessage', {
       chat_id: chat, parse_mode: 'HTML', reply_markup: appButton(origin),
-      text: '👋 Привет! Я записываю траты и считаю, куда уходят деньги.\n\n' + HELP,
+      text: '👋 Привет! Я веду твой бюджет прямо в чате.\n\n' +
+        '<b>Как это работает:</b>\n' +
+        '1️⃣ Нажми «📊 Открыть бюджет» и за минуту настрой: режим, валюту, доход.\n' +
+        '2️⃣ Пиши траты сюда, как другу:\n' +
+        '   • <code>кофе 300</code>\n   • <code>вчера такси 35 ю</code>\n   • <code>отложил 5к</code>\n' +
+        '3️⃣ Я сам разложу по категориям и покажу графики в приложении.\n\n' +
+        '<code>итоги</code> — сводка за месяц, /undo — отменить последнюю запись.',
     });
+    return;
+  }
+  if (text === '/admin') {
+    const a = await reg.claimAdmin(uid);
+    await tg(env, 'sendMessage', { chat_id: chat, text: a === uid ? '👑 Ты админ: сюда будут приходить отзывы. /stats — статистика.' : 'Админ уже назначен.' });
+    return;
+  }
+  if (text === '/stats') {
+    if ((await reg.getAdmin()) !== uid) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Команда только для админа.' }); return; }
+    const list = await reg.regList(), wk = Date.now() - 7 * 864e5, day = Date.now() - 864e5;
+    const c = (f) => list.filter(f).length;
+    await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text:
+      `📊 <b>Статистика</b>\n\n👥 Всего зашли: ${list.length}\n🧭 Прошли настройку: ${c((u) => u.onb)}\n✍️ Записали хотя бы 1 трату: ${c((u) => u.n > 0)}\n🔥 Активны за сутки: ${c((u) => u.seen > day)}\n📅 Активны за неделю: ${c((u) => u.seen > wk)}\n🔔 С напоминаниями: ${c((u) => u.notif && (u.notif.m || u.notif.e))}\n\n` +
+      list.sort((a, b) => (b.seen || 0) - (a.seen || 0)).slice(0, 15).map((u) => `• ${u.name || u.uid}${u.user ? ' @' + u.user : ''} — ${u.n || 0} записей`).join('\n') });
     return;
   }
   if (text.startsWith('/undo')) {
@@ -383,14 +513,19 @@ async function onUpdate(update, env, origin) {
     return;
   }
   const s = await st.addTx(tx);
+  await reg.regUpdate(uid, { n: (s.tx || []).length });
   await tg(env, 'sendMessage', { chat_id: chat, text: summary(s, envId, tx), reply_markup: appButton(origin) });
 }
 
 /* ---------- маршруты ---------- */
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runSchedule(env));
+  },
   async fetch(request, env) {
     const url = new URL(request.url);
     const origin = url.origin;
+    if (!env.ORIGIN) env.ORIGIN = origin + '/';
 
     if (!env.BOT_TOKEN && url.pathname !== '/') {
       return json({ ok: false, error: 'BOT_TOKEN не задан в настройках Worker' }, 500);
@@ -427,15 +562,45 @@ export default {
       return json({ ok: !!rates, rates });
     }
 
+    if (url.pathname === '/api/feedback' && request.method === 'POST') {
+      const user = await checkInitData(request.headers.get('X-Init-Data'), env.BOT_TOKEN);
+      if (!user) return json({ ok: false, error: 'unauthorized' }, 401);
+      const { text } = await request.json().catch(() => ({}));
+      if (!text || String(text).trim().length < 3) return json({ ok: false }, 400);
+      const admin = await store(env, '__registry__').getAdmin();
+      if (admin) {
+        await tg(env, 'sendMessage', { chat_id: admin, text: `💬 Отзыв от ${user.first_name || ''}${user.username ? ' @' + user.username : ''} (id ${user.id}):\n\n${String(text).slice(0, 1500)}` });
+      }
+      return json({ ok: true });
+    }
+
+    if (url.pathname === '/api/export' && request.method === 'POST') {
+      const user = await checkInitData(request.headers.get('X-Init-Data'), env.BOT_TOKEN);
+      if (!user) return json({ ok: false, error: 'unauthorized' }, 401);
+      const state = (await store(env, user.id).getState()) || {};
+      const fd = new FormData();
+      fd.append('chat_id', String(user.id));
+      fd.append('caption', `📤 Все твои траты (${(state.tx || []).length} шт.). Открывается в Excel и Google Таблицах.`);
+      fd.append('document', new Blob([buildCsv(state)], { type: 'text/csv' }), `budget-${todayStr(state)}.csv`);
+      const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendDocument`, { method: 'POST', body: fd });
+      const j = await r.json().catch(() => ({}));
+      return json({ ok: !!j.ok }, j.ok ? 200 : 502);
+    }
+
     if (url.pathname === '/api/state') {
       const user = await checkInitData(request.headers.get('X-Init-Data'), env.BOT_TOKEN);
       if (!user) return json({ ok: false, error: 'unauthorized' }, 401);
       const st = store(env, user.id);
-      if (request.method === 'GET') return json({ ok: true, state: await st.getState() });
+      const reg = store(env, '__registry__');
+      if (request.method === 'GET') {
+        await reg.regUpdate(user.id, { seen: Date.now(), name: user.first_name || '', user: user.username || '' });
+        return json({ ok: true, state: await st.getState() });
+      }
       if (request.method === 'PUT') {
         const body = await request.json();
         if (!body || typeof body.state !== 'object') return json({ ok: false }, 400);
         const s = await st.putState(body.state, Array.isArray(body.deleted) ? body.deleted : []);
+        await reg.regUpdate(user.id, { seen: Date.now(), tz: s.tz, notif: s.notif, onb: !!s.onboarded, n: (s.tx || []).length, name: user.first_name || '', user: user.username || '' });
         return json({ ok: true, state: s });
       }
       return json({ ok: false }, 405);
