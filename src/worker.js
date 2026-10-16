@@ -577,6 +577,50 @@ async function tg(env, method, body) {
 }
 const appButton = (origin) => ({ inline_keyboard: [[{ text: '📊 Открыть бюджет', web_app: { url: origin + '/' } }]] });
 
+/* ---------- ключевые слова вместо команд ---------- */
+export const KB = { keyboard: [[{ text: '☀️ Сегодня' }, { text: '📊 Итоги месяца' }], [{ text: '📅 Неделя' }, { text: '✉️ Категории' }], [{ text: '⏰ Напоминания' }, { text: '🔁 Платежи' }], [{ text: '↩️ Отменить' }, { text: '💡 Помощь' }]], resize_keyboard: true, is_persistent: true, input_field_placeholder: 'Напиши трату: кофе 300' };
+export function keywordOf(raw) {
+  const t = raw.toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9\s/]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t || /\d/.test(t)) return null;
+  const has = (re) => re.test(t);
+  if (has(/^\/?(start|старт|начать|меню|привет|здравствуй\S*|хай|hello|hi)$/)) return 'start';
+  if (has(/^\/?(help|помощь|помоги|инструкция|команды|что (ты )?умеешь|как (пользоваться|писать|записать|это работает))$/)) return 'help';
+  if (has(/^\/?(undo|отмена|отменить|отмени|удали( последн\S*)?( трату| запись)?|удалить( последн\S*)?( трату| запись)?|назад|ошибся)$/)) return 'undo';
+  if (has(/^\/?(reminders|напоминания|мои напоминания|список напоминаний)$/)) return 'rem';
+  if (has(/^\/?(subs|подписки|платежи|регулярные( платежи)?|мои платежи|мои подписки)$/)) return 'subs';
+  if (has(/^\/?(today|сегодня|сколько можно( потратить)?( сегодня)?|можно сегодня|лимит|остаток|сколько осталось|траты за сегодня|сколько (я )?потратил сегодня)$/)) return 'today';
+  if (has(/^\/?(week|неделя|за неделю|итоги недели|отчет за неделю|траты за неделю)$/)) return 'week';
+  if (has(/^\/?(cats|категории|конверты|мои категории|по категориям)$/)) return 'cats';
+  if (has(/^\/?(report|month|итоги|итог|итоги месяца|итоги за месяц|итог за месяц|отчет за месяц|отчет|месяц|статистика|сколько (я )?потратил|траты за месяц|за месяц|баланс)$/)) return 'report';
+  return null;
+}
+export function todayText(state) {
+  const main = state.cur || 'RUB', P = period(state), today = todayStr(state);
+  const isSave = (t) => catInfo(t.env, state).save;
+  const spT = (state.tx || []).filter((t) => inPeriod(t, P) && !isSave(t));
+  const tod = spT.filter((t) => txDate(t) === today), todS = sumOf(tod), before = sumOf(spT.filter((t) => txDate(t) < today));
+  const plan = getCats(state).filter((c) => !c.save).reduce((a, c) => a + (c.amt || 0), 0);
+  let out = '';
+  if (state.mode !== 'simple' && plan) {
+    const norm = Math.max(0, (plan - before) / Math.max(1, P.days - P.elapsed + 1)), left = norm - todS;
+    out = left >= 0 ? `☀️ Сегодня можно ещё <b>${fmt(left, main)}</b>\nНорма на день ${fmt(norm, main)}, потрачено ${fmt(todS, main)}.` : `😬 Сегодня уже сверх нормы на <b>${fmt(-left, main)}</b>\nНорма на день ${fmt(norm, main)}, потрачено ${fmt(todS, main)}.`;
+  } else out = `☀️ Сегодня потрачено: <b>${fmt(todS, main)}</b>\nЗа месяц: ${fmt(sumOf(spT), main)}.`;
+  if (tod.length) out += '\n\n' + tod.slice(-8).map((t) => { const c = catInfo(t.env, state); return `${c.ic} ${t.note || c.name} — ${fmt(t.sum, main)}`; }).join('\n');
+  return out;
+}
+export function catsText(state) {
+  const main = state.cur || 'RUB', P = period(state), simple = state.mode === 'simple';
+  const list = (state.tx || []).filter((t) => inPeriod(t, P));
+  const rows = getCats(state).map((c) => {
+    const s = sumOf(list.filter((t) => t.env === c.id));
+    if (c.save) return `${c.ic} ${c.name}: отложено ${fmt(s, main)}`;
+    if (simple || !c.amt) return `${c.ic} ${c.name}: ${fmt(s, main)}`;
+    const left = c.amt - s;
+    return `${c.ic} ${c.name}: ${fmt(s, main)} из ${fmt(c.amt, main)}${left < 0 ? ' 😬' : ` (осталось ${fmt(left, main)})`}`;
+  });
+  return `✉️ <b>Категории за ${P.label}</b>\n\n` + rows.join('\n');
+}
+
 async function transcribe(env, fileId) {
   if (!env.AI) return null;
   try {
@@ -688,7 +732,29 @@ async function onUpdate(update, env, origin) {
 
   const reg = store(env, '__registry__');
   await reg.regUpdate(uid, { seen: Date.now(), name: msg.from.first_name || '', user: msg.from.username || '' });
+  const kw = keywordOf(text);
+  if (kw === 'today' || kw === 'week' || kw === 'cats') {
+    const state = (await st.getState()) || {};
+    const body = kw === 'today' ? todayText(state) : kw === 'cats' ? catsText(state) : (weekText(state) || '📅 За последние 7 дней трат нет. Напиши, например: кофе 300');
+    await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: body, reply_markup: appButton(origin) });
+    return;
+  }
+  if (kw === 'start' || kw === 'help') text = '/start';
+  else if (kw === 'undo') text = '/undo';
+  else if (kw === 'rem') text = 'напоминания';
+  else if (kw === 'subs') text = 'подписки';
+  else if (kw === 'report') text = 'итоги';
   if (text.startsWith('/start') || text.startsWith('/help')) {
+    if (kw === 'help' || text.startsWith('/help')) {
+      await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', reply_markup: KB, text:
+        '💡 <b>Как со мной общаться</b>\n\n' +
+        '<b>Записать трату</b> — просто напиши: <code>кофе 300</code>, <code>вчера такси 500</code>, <code>еда 50 ю</code>, <code>10$ подписка</code>\n' +
+        '<b>Отложить</b> — <code>отложил 5к</code>\n' +
+        '<b>Голосом</b> — запиши голосовое 🎤\n' +
+        '<b>Напомнить</b> — <code>напомни в 16:30 оплатить интернет 500</code>\n\n' +
+        'А ещё понимаю слова: <b>сегодня</b>, <b>итоги</b>, <b>неделя</b>, <b>категории</b>, <b>напоминания</b>, <b>платежи</b>, <b>отменить</b>. Или жми кнопки внизу 👇' });
+      return;
+    }
     await tg(env, 'sendMessage', {
       chat_id: chat, parse_mode: 'HTML', reply_markup: appButton(origin),
       text: '👋 Привет! Я веду твой бюджет прямо в чате.\n\n' +
@@ -699,8 +765,9 @@ async function onUpdate(update, env, origin) {
         '3️⃣ Я сам разложу по категориям и покажу графики в приложении.\n\n' +
         '🎤 Можно голосом: просто запиши голосовое «такси пятьсот».\n' +
         '⏰ <code>напомни в 16:30 оплатить интернет 500</code>\n\n' +
-        '<code>итоги</code> — сводка за месяц, <code>напоминания</code> — список, /undo — отменить последнюю запись.',
+        'Кнопки внизу 👇 — сводки, напоминания, отмена. Команды учить не нужно.',
     });
+    await tg(env, 'sendMessage', { chat_id: chat, text: 'Готов записывать 🙂 Напиши первую трату, например: кофе 300', reply_markup: KB });
     return;
   }
   if (text === '/admin') {
@@ -752,7 +819,7 @@ async function onUpdate(update, env, origin) {
     await tg(env, 'sendMessage', { chat_id: chat, text: '🔁 Регулярные платежи:\n\n' + subs.sort((a, b) => a.day - b.day).map((x) => `${x.ic || '💳'} ${x.name} — ${fmt(x.sum, x.cur || main)}, ${x.day}-го`).join('\n') + `\n\nВсего в месяц ≈ ${fmt(tot, main)}`, reply_markup: appButton(origin) });
     return;
   }
-  if (/^\/?(итоги|итог|месяц|отч[её]т|month|report)(\s|$)/i.test(text)) {
+  if (/^\/?(итоги|итог|месяц|отч[её]т|month|report)$/i.test(text)) {
     const state = (await st.getState()) || {};
     await tg(env, 'sendMessage', { chat_id: chat, text: monthReport(state, await getRates()), reply_markup: appButton(origin) });
     return;
@@ -811,19 +878,12 @@ export default {
       await tg(env, 'setChatMenuButton', {
         menu_button: { type: 'web_app', text: 'Мой бюджет', web_app: { url: origin + '/' } },
       });
-      const rc = await tg(env, 'setMyCommands', { commands: [
-        { command: 'start', description: '👋 Как пользоваться' },
-        { command: 'report', description: '📅 Итоги месяца' },
-        { command: 'reminders', description: '⏰ Мои напоминания' },
-        { command: 'subs', description: '🔁 Регулярные платежи' },
-        { command: 'undo', description: '↩️ Отменить последнюю запись' },
-        { command: 'help', description: '💡 Примеры, как писать траты' },
-      ] });
+      const rc = await tg(env, 'setMyCommands', { commands: [{ command: 'start', description: '👋 Начать и кнопки' }] });
       const rd = await tg(env, 'setMyDescription', { description:
         '💌 Бюджет, который ведётся сам.\n\n' +
         'Пиши траты как другу: «кофе 300», «такси 35 ю», «отложил 5к». Можно голосом 🎤\n\n' +
         'Я разложу всё по категориям, посчитаю в любой валюте и покажу, сколько можно потратить сегодня.\n\n' +
-        '⏰ Напомню об оплатах, пришлю итоги недели и месяца.\n\nЖми «Старт» 👇' });
+        '⏰ Напомню об оплатах, пришлю итоги недели и месяца.\n\nКоманды учить не нужно: пиши обычными словами или жми кнопки.\n\nЖми «Старт» 👇' });
       const rs = await tg(env, 'setMyShortDescription', { short_description: '💌 Бюджет в Telegram: пиши траты как другу, а я посчитаю, сколько можно тратить сегодня.' });
       return new Response(
         (r.ok ? '✅ Готово! Бот подключён к серверу. Можно закрыть страницу и писать боту.' : '❌ Ошибка: ' + JSON.stringify(r)) + `\n\nКоманды: ${rc.ok ? '✅' : '❌ ' + JSON.stringify(rc)}\nОписание: ${rd.ok ? '✅' : '❌ ' + JSON.stringify(rd)}\nКороткое описание: ${rs.ok ? '✅' : '❌ ' + JSON.stringify(rs)}`,
