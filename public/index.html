@@ -296,6 +296,61 @@ textarea{width:100%;box-sizing:border-box;font:500 15px var(--body);color:var(--
 .tbl td:first-child,.tbl th:first-child{text-align:left;position:sticky;left:0;background:var(--paper)}
 .tbl tr.tot td{font-weight:700;border-bottom:0}
 .tbl td.z{color:var(--line)}
+
+/* ---- v4: приветствие и анимации обучения ---- */
+.hero{position:relative;height:170px;border-radius:22px;background:radial-gradient(circle at 50% 62%,var(--accent-soft) 0 38%,transparent 39%),var(--soft);overflow:hidden}
+.hero>div{position:absolute;line-height:1}
+.h-env{left:50%;top:58%;font-size:76px;transform:translate(-50%,-50%);animation:h-pop .7s cubic-bezier(.3,1.6,.5,1) both,h-float 3s ease-in-out .7s infinite}
+.h-wave{left:calc(50% + 34px);top:24%;font-size:34px;transform-origin:70% 80%;animation:h-in .4s .5s both,h-wave 1.4s ease-in-out .9s 3}
+.h-coin{top:-40px;font-size:26px;animation:h-drop 2.6s ease-in infinite}
+.h-coin.c1{left:42%;animation-delay:1s}.h-coin.c2{left:52%;animation-delay:1.8s}.h-coin.c3{left:47%;animation-delay:2.6s}
+.h-spark{font-size:18px;animation:h-tw 1.8s ease-in-out infinite}
+.h-spark.s1{left:22%;top:26%}.h-spark.s2{right:20%;top:62%;animation-delay:.9s}.h-spark.s3{left:28%;top:70%;animation-delay:.4s;font-size:14px}
+.h-tag{right:12px;top:12px;font:600 12px var(--body);background:var(--paper);color:var(--accent);border-radius:99px;padding:5px 10px;animation:h-in .4s 1.2s both}
+@keyframes h-pop{0%{transform:translate(-50%,-50%) scale(0) rotate(-20deg)}100%{transform:translate(-50%,-50%) scale(1)}}
+@keyframes h-float{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(-50%,-56%)}}
+@keyframes h-in{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:none}}
+@keyframes h-wave{0%,100%{transform:rotate(0)}25%{transform:rotate(22deg)}75%{transform:rotate(-12deg)}}
+@keyframes h-drop{0%{transform:translateY(0) rotate(0);opacity:0}10%{opacity:1}55%{transform:translateY(130px) rotate(200deg) scale(.9);opacity:1}62%,100%{transform:translateY(140px) scale(.2);opacity:0}}
+@keyframes h-tw{0%,100%{opacity:.2;transform:scale(.7)}50%{opacity:1;transform:scale(1.15)}}
+.hello h2 .wave-name{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){.hero *{animation:none!important}.h-coin{display:none}}
+/* ползунок-демо */
+.sl{gap:8px}
+.sl-top,.sl-bot{display:flex;justify-content:space-between;align-items:baseline;font-size:14px}
+.sl-top b{font-family:var(--display);font-weight:500;font-size:20px}
+.sl-bot{color:var(--muted);font-size:13px}.sl-bot b{color:var(--accent);font-size:18px;font-family:var(--display);font-weight:500}
+.sl-track{position:relative;height:10px;background:var(--paper);border:1px solid var(--line);border-radius:99px;margin:14px 4px 10px}
+.sl-fill{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:99px}
+.sl-thumb{position:absolute;top:50%;width:24px;height:24px;margin:-12px 0 0 -12px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.3)}
+.sl-hand{position:absolute;top:10px;margin-left:-6px;font-size:22px;transition:transform .2s}
+.sl-hand.press{transform:scale(.85) translateY(-3px)}
+/* 100% демо */
+.al-bar{display:flex;height:18px;background:var(--paper);border:1px solid var(--line);border-radius:99px;overflow:hidden}
+.al-bar i{display:block;height:100%}
+.al-leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
+.al-num{display:flex;justify-content:space-between;align-items:baseline;font-size:14px}
+.al-num b{font-family:var(--display);font-weight:500;font-size:20px;transition:color .3s}
+.al-num.done b{color:var(--good)}
+.al-ok{font-size:13px;font-weight:600;color:var(--good);opacity:0;transition:opacity .3s}
+.al-ok.on{opacity:1}
+/* бот-демо */
+.bc .chat{min-height:96px}
+.bc .msg{opacity:0;animation-iteration-count:1;animation-duration:3.2s}
+.bc .me{animation-name:bc-me}.bc .bot{animation-name:bc-bot}
+@keyframes bc-me{0%{opacity:0;transform:translateY(8px)}10%,88%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes bc-bot{0%,28%{opacity:0;transform:translateY(8px)}38%,88%{opacity:1;transform:none}100%{opacity:0}}
+.bc .dots{font-size:12px;color:var(--muted);text-align:center}
+@media (prefers-reduced-motion:reduce){.bc .msg{animation:none;opacity:1}}
+.cheat{display:flex;flex-wrap:wrap;gap:6px}
+.cheat span{background:var(--soft);border:1px solid var(--line);border-radius:99px;padding:5px 10px;font-size:13px}
+.cheat span b{font-weight:600}
+/* распределение в конвертах */
+.alloc{display:flex;height:14px;background:var(--soft);border-radius:99px;overflow:hidden;margin:2px 0}
+.alloc i{display:block;height:100%;transition:width .4s}
+.alloc.over{outline:2px solid var(--bad);outline-offset:1px}
+.status .linkbtn{padding:0 0 0 4px;font-size:13px;color:inherit;font-weight:600}
+.status.warn{background:var(--accent-soft);color:var(--ink)}
 /* пустой старт */
 .kpi .chip:not(.good):not(.bad){background:var(--soft);color:var(--muted)}
 .kpi[data-help]{cursor:pointer}.qi{opacity:.5;font-size:11px}
@@ -389,8 +444,10 @@ textarea{width:100%;box-sizing:border-box;font:500 15px var(--body);color:var(--
       <div class="row"><label for="rent">Жильё (аренда, ипотека, ЖКУ)</label><input type="number" id="rent" min="0" step="500"></div>
       <div class="row"><label for="loans">Кредиты и рассрочки</label><input type="number" id="loans" min="0" step="500"></div>
       <div class="free"><span>Остаётся на конверты</span><b id="free"></b></div>
+      <div class="alloc" id="alloc" aria-hidden="true"></div>
       <div class="status" id="status"></div>
-      <button type="button" class="btn" id="fix" hidden>🪄 Выровнять до 100% автоматически</button>
+      <button type="button" class="btn" id="toSave" hidden></button>
+      <button type="button" class="btn ghost" id="fix" hidden>🪄 Выровнять до 100% автоматически</button>
     </div>
     <div class="card">
       <h2><span id="envTitle">✉️ Конверты</span><button type="button" class="help" data-help="envs" aria-label="Что это?">?</button></h2>
@@ -478,6 +535,12 @@ textarea{width:100%;box-sizing:border-box;font:500 15px var(--body);color:var(--
       <h2>🎨 Оформление</h2>
       <div class="seg" id="themeMode"><button type="button" data-tm="auto">Как в Telegram</button><button type="button" data-tm="light">☀️ Светлая</button><button type="button" data-tm="dark">🌙 Тёмная</button></div>
       <div class="swatches" id="accents"></div>
+    </div>
+    <div class="card">
+      <h2>🤖 Как писать боту</h2>
+      <div class="anim bc" data-anim="bot"></div>
+      <div class="cheat"><span><b>кофе 300</b> трата</span><span><b>вчера такси 500</b> на вчера</span><span><b>12.10 аптека 800</b> на дату</span><span><b>еда 50 ю</b> в юанях</span><span><b>10$ подписка</b> в долларах</span><span><b>отложил 5к</b> в копилку</span><span><b>итоги</b> отчёт за месяц</span><span><b>/undo</b> отменить последнее</span></div>
+      <p class="hint">Категорию бот угадает по слову. Не угадал — предложит кнопки.</p>
     </div>
     <div class="card">
       <h2>📚 Помощь</h2>
@@ -637,6 +700,7 @@ function fillSelects(){
 /* ---------- расчёт и рендер ---------- */
 let charts={};
 function render(){
+  try{checkQuest()}catch(e){}
   const P=periodOf(OFF), PP=periodOf(OFF-1), simple=S.mode==='simple';
   const txP=S.tx.filter(t=>inP(t,P)), txPP=S.tx.filter(t=>inP(t,PP)&&dayIdx(t,PP)<=P.elapsed);
   const free=Math.max(0,S.income-S.rent-S.loans);
@@ -658,11 +722,19 @@ function render(){
   ['income','rent','loans'].forEach(k=>{if(document.activeElement!==$(k))$(k).value=S[k]||0});
   $('free').textContent=fmt(free);
   const totA=S.cats.reduce((a,e)=>a+(e.amt||0),0), dA=totA-free, tot=free?Math.round(totA/free*100):0, st=$('status');
-  if(free<=0){st.className='status bad';st.textContent='Обязательные платежи съедают весь доход. Начните с кредитов.'}
-  else if(dA>=1){st.className='status bad';st.innerHTML=`🙈 Раздали по конвертам <b>${fmt(totA)}</b>, а свободно ${fmt(free)}. Лишние <b>${fmt(dA)}</b> (${tot}% вместо 100%).`}
-  else if(dA<=-1){st.className='status bad';st.innerHTML=`🤔 Не распределено <b>${fmt(-dA)}</b>. Добавь их в конверт, например в копилку 🐷`}
-  else{st.className='status';st.textContent='✅ Все деньги распределены: ровно 100%.'}
-  $('fix').hidden=(Math.abs(dA)<1||free<=0);
+  const why=' <button type="button" class="linkbtn" data-help="alloc">Что это значит?</button>';
+  if(!S.income){st.className='status warn';st.innerHTML='👆 Впиши доход, и я покажу, сколько денег можно разложить по конвертам.'}
+  else if(free<=0){st.className='status bad';st.textContent='Обязательные платежи съедают весь доход. Начни с кредитов.'}
+  else if(dA>=1){st.className='status bad';st.innerHTML=`🙈 Распределено ${tot}%: по конвертам ${fmt(totA)}, а свободно только ${fmt(free)}. Лишние <b>${fmt(dA)}</b>, уменьши какие-то конверты.`+why}
+  else if(dA<=-1){st.className='status warn';st.innerHTML=`🤔 Распределено ${tot}%. Ещё <b>${fmt(-dA)}</b> без задачи: такие деньги обычно утекают незаметно.`+why}
+  else{st.className='status';st.innerHTML='✅ Ровно 100%: у каждого рубля есть задача.'+why}
+  const sv=saveCats()[0];
+  $('toSave').hidden=!(free>0&&dA<=-1&&sv); if(sv)$('toSave').textContent=`${sv.ic} Положить ${fmt(-dA)} в «${sv.name}»`;
+  $('fix').hidden=(Math.abs(dA)<1||free<=0||!S.income);
+  $('fix').textContent=dA>0?'🪄 Уменьшить все конверты до 100%':'🪄 Раздать остаток по всем конвертам';
+  const base=Math.max(free,totA)||1;
+  $('alloc').className='alloc'+(dA>=1?' over':'');
+  $('alloc').innerHTML=free>0&&S.income?S.cats.filter(e=>e.amt>0).map(e=>`<i style="width:${e.amt/base*100}%;background:var(${e.c})"></i>`).join(''):'';
   /* строки категорий */
   const spentAll=spendCats().reduce((a,e)=>a+e.spent,0);
   S.cats.forEach(e=>{
@@ -903,6 +975,9 @@ $('p-env').addEventListener('input',e=>{
   else return;
   render();
 });
+$('toSave').addEventListener('click',()=>{const sv=saveCats()[0];if(!sv)return;
+  const free=Math.max(0,S.income-S.rent-S.loans),tot=S.cats.reduce((a,e)=>a+(e.amt||0),0);if(free-tot<1)return;
+  sv.amt=(sv.amt||0)+(free-tot);render();toast(`${sv.ic} Остаток в копилке. Ровно 100%!`);burst([sv.ic,'✨','✅'])});
 $('fix').addEventListener('click',()=>{
   const free=Math.max(0,S.income-S.rent-S.loans),tot=S.cats.reduce((a,e)=>a+(e.amt||0),0)||1;let sum=0;
   S.cats.forEach((e,i)=>{let v=Math.round((e.amt||0)*free/tot/10)*10;if(i===S.cats.length-1)v=free-sum;sum+=v;e.amt=v});
@@ -931,7 +1006,7 @@ $('trGo').addEventListener('click',()=>{
 const curOpts=Object.entries(CUR).map(([c,[s2,n]])=>`<option value="${c}">${s2} ${n}</option>`).join('');
 $('cur').innerHTML=curOpts;$('a-cur').innerHTML=curOpts;
 $('startDay').innerHTML=[...Array(28)].map((_,i)=>`<option value="${i+1}">${i+1}-го числа</option>`).join('');
-function syncSettings(){$('cur').value=S.cur;$('a-cur').value=S.cur;$('startDay').value=S.start||1;if(typeof syncNotif==='function')syncNotif()}
+function syncSettings(){mountAnims($('p-set'));$('cur').value=S.cur;$('a-cur').value=S.cur;$('startDay').value=S.start||1;if(typeof syncNotif==='function')syncNotif()}
 function setMain(nc){
   const old=S.cur;if(nc===old)return;
   if(conv(1,old,nc)==null){toast('😕 Нет курса для этой валюты');$('cur').value=old;return}
@@ -967,6 +1042,7 @@ function selectTab(id){
   $('p-set').hidden=true;$('gearBtn').setAttribute('aria-pressed',false);
   TAB=$(id).getAttribute('aria-controls'); EDIT=null;
   if(id==='t-over')Object.values(charts).forEach(c=>c.resize());
+  tabTour(id);
 }
 document.querySelectorAll('[role=tab]').forEach(t=>t.addEventListener('click',()=>selectTab(t.id)));
 
@@ -1018,7 +1094,9 @@ function drawWizard(){
   const head=`<div class="step">Шаг ${W.step} из 3</div>`;
   let h='';
   if(W.step===0){
-    h=`<div class="hello"><div class="e">💸</div><h2>Бюджет, который ведётся сам</h2><p>Пиши траты боту как другу: «кофе 300», «вчера такси 35 ю». Я всё посчитаю и покажу, куда уходят деньги.</p></div>
+    const nm=(inTG&&tg.initDataUnsafe&&tg.initDataUnsafe.user&&tg.initDataUnsafe.user.first_name)||'';
+    h=`<div class="hero" aria-hidden="true"><div class="h-spark s1">✨</div><div class="h-spark s2">✨</div><div class="h-spark s3">⭐</div><div class="h-coin c1">🪙</div><div class="h-coin c2">💵</div><div class="h-coin c3">🪙</div><div class="h-env">💌</div><div class="h-wave">👋</div><div class="h-tag">1 минута на настройку</div></div>
+    <div class="hello"><h2>Привет${nm?', <span class="wave-name">'+esc(nm)+'</span>':''}!<br>Это бюджет, который ведётся сам</h2><p>Пиши траты боту как другу: «кофе 300», «вчера такси 35 ю». Я всё посчитаю и покажу, куда уходят деньги.</p></div>
     ${ANIM}
     <button type="button" class="btn" data-wnext>Начать настройку → <small style="opacity:.8;font-weight:500">1 минута</small></button>
     <button type="button" class="btn ghost" data-wdemo>👀 Сначала посмотреть пример</button>`;
@@ -1092,6 +1170,7 @@ function exitDemo(silent){
 
 /* ---------- подсказки «?» ---------- */
 const HELP={
+  alloc:['✅ Что значит «ровно 100%»','Свободные деньги (доход минус аренда и кредиты) должны целиком разойтись по конвертам. Тогда у каждого рубля есть задача: на еду, на транспорт, в копилку.','Меньше 100% — часть денег «ничья», и она обычно незаметно утекает. Положи остаток в копилку.\nБольше 100% — ты запланировал больше, чем у тебя есть. Уменьши какие-то конверты.\nРовно 100% — всё правильно 👍'],
   kspent:['💸 Потрачено','Сколько ты уже потратил в этом месяце (без копилок). Зелёная плашка — ты тратишь медленнее плана, красная — быстрее.'],
   kdaily:['☀️ Можно тратить в день','Сколько можно тратить каждый день до конца месяца, чтобы уложиться в план. Считается так: (план − уже потрачено) ÷ оставшиеся дни.','Пример: план 30 000 ₽, потрачено 10 000 ₽, осталось 10 дней → можно 2 000 ₽ в день. «Обычно» — сколько выходит в день, если делить план поровну на весь месяц.\n\nЧтобы цифра появилась, задай доход и суммы во вкладке «Конверты».'],
   kfore:['🔮 Прогноз на месяц','Сколько ты потратишь к концу месяца, если продолжишь тратить в том же темпе.'],
@@ -1128,23 +1207,105 @@ const TOUR=[
   ['.help','❓ Подсказки','Не понятно, что за блок? Жми «?» рядом с заголовком.'],
   [null,'🤖 Главная фишка','Пиши траты прямо боту в чат, как другу. Они сами появятся здесь, с графиками и остатками.']
 ];
-let TI=0;
-function startTour(){if(S.demo)exitDemo(true);selectTab('t-over');window.scrollTo({top:0});TI=0;
+const TOURS={main:TOUR,
+ env:[
+  ['#p-env .free','💰 Свободные деньги','Сначала впиши доход и обязательные платежи: аренду, кредиты. Что осталось — свободные деньги. Их и раскладываем по конвертам.'],
+  ['#envs .pct-row','✉️ Конверт = лимит на месяц','Сколько ты разрешаешь себе потратить на это за месяц. Двигай ползунок или впиши сумму. Проценты — какая часть свободных денег ушла в этот конверт.','slider'],
+  ['#alloc','✅ Что значит «ровно 100%»','Все свободные деньги разложены по конвертам, у каждого рубля есть задача. Меньше 100% — часть денег «ничья» и утекает незаметно. Больше — запланировал больше, чем есть.','alloc'],
+  ['#envs .goal','🐷 Копилка и цель','Впиши, на что копишь и сколько это стоит. Покажу прогресс, а на 25, 50, 75 и 100% будет праздник 🎉'],
+  ['#p-env .transfer','↔️ Не хватило в конверте?','Перекинь деньги из другого конверта. Лимиты пересчитаются сами.'],
+  ['#addCatBtn','➕ Свои категории','Нет нужной? Добавь свою: собака, спорт, подарки. Ненужную удали 🗑']],
+ envS:[
+  ['#envs .env-head','🏷 Категории','Нажми на картинку или название, чтобы поменять. 🗑 — удалить ненужную.'],
+  ['#addCatBtn','➕ Свои категории','Добавь свою: собака, спорт, подарки. Траты в неё можно писать и боту: «собака 500».'],
+  [null,'🤖 Пиши боту','Категорию бот угадает по слову:','bot']],
+ tx:[
+  ['#addForm','➕ Добавить трату','Сумма, валюта, категория и дата. Валюта любая: пересчитаю по курсу.'],
+  ['#txList','✏️ Исправить или удалить','Нажми на любую трату, чтобы поменять сумму, категорию или дату.'],
+  [null,'🤖 Быстрее через бота','Открывать приложение не обязательно. Просто пиши боту в чат, как другу:','bot']],
+ food:[
+  ['#days','🍳 Меню на неделю','Готовое меню на 7 дней: завтрак, обед, ужин. Листай дни.'],
+  ['#p-food .stepper','👨‍👩‍👧‍👦 Сколько вас','Поставь число людей, и список покупок пересчитается.'],
+  ['#shop','🛒 Список покупок','Всё для этого меню. Отмечай галочкой прямо в магазине, и ничего лишнего не купишь.']]
+};
+let TI=0, TKEY='main';
+function startTour(){if(S.demo)exitDemo(true);S.seen={};selectTab('t-over');window.scrollTo({top:0});runTour('main')}
+function runTour(key){TKEY=key;TI=0;
   ['tour-block','tour-hole','tour-tip'].forEach(c=>{let el=document.querySelector('.'+c);if(!el){el=document.createElement('div');el.className=c;document.body.appendChild(el)}});
   drawTour()}
-function endTour(){document.querySelectorAll('.tour-block,.tour-hole,.tour-tip').forEach(x=>x.remove());S.toured=true;save()}
+function endTour(){document.querySelectorAll('.tour-block,.tour-hole,.tour-tip').forEach(x=>x.remove());
+  S.seen=S.seen||{};S.seen[TKEY]=1;
+  if(TKEY==='main'){const first=!S.toured;S.toured=true;if(first||!S.tx.length)setTimeout(startQuest,300)}
+  save()}
+const tourEl=sel=>sel?[...document.querySelectorAll(sel)].find(x=>x.offsetParent&&x.getBoundingClientRect().height>4):null;
 function drawTour(){
-  const [sel,t,p]=TOUR[TI], hole=document.querySelector('.tour-hole'), tip=document.querySelector('.tour-tip');
-  const el=sel?[...document.querySelectorAll(sel)].find(x=>x.offsetParent):null;
+  const T=TOURS[TKEY];
+  while(TI<T.length&&T[TI][0]&&!tourEl(T[TI][0]))TI++;
+  if(TI>=T.length){endTour();return}
+  const [sel,t,p,an]=T[TI], hole=document.querySelector('.tour-hole'), tip=document.querySelector('.tour-tip');
+  const el=tourEl(sel), last=TI===T.length-1;
   if(el){hole.style.outlineWidth='';el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect(),pd=6;
     Object.assign(hole.style,{display:'block',left:r.left-pd+'px',top:r.top-pd+'px',width:r.width+pd*2+'px',height:r.height+pd*2+'px'});
-    const below=r.bottom+16+200<innerHeight; tip.style.top=(below?r.bottom+16:Math.max(12,r.top-16-tip.offsetHeight||170))+'px';
-  }else{Object.assign(hole.style,{display:'block',left:'50%',top:'50%',width:'0px',height:'0px',outlineWidth:'0px'});tip.style.top=Math.max(20,innerHeight*0.12)+'px'}
-  tip.innerHTML=`<b>${t}</b><p>${p}</p>${sel?'':ANIM}<div class="row2"><small>${TI+1} из ${TOUR.length}</small>${TI<TOUR.length-1?'<button type="button" class="tour-skip">Пропустить</button>':''}<button type="button" class="tour-next">${TI<TOUR.length-1?'Дальше →':'Понятно 👍'}</button></div>`;
-  if(el){const r=el.getBoundingClientRect();const below=r.bottom+16+tip.offsetHeight<innerHeight;tip.style.top=(below?r.bottom+16:Math.max(12,r.top-16-tip.offsetHeight))+'px'}
-  tip.querySelector('.tour-next').onclick=()=>{TI++;if(TI>=TOUR.length)endTour();else drawTour()};
+  }else{Object.assign(hole.style,{display:'block',left:'50%',top:'50%',width:'0px',height:'0px',outlineWidth:'0px'})}
+  const media=an?`<div class="anim${an==='bot'?' bc':''}${an==='slider'?' sl':''}" data-anim="${an}"></div>`:(sel?'':ANIM);
+  tip.innerHTML=`<b>${t}</b><p>${p}</p>${media}<div class="row2"><small>${TI+1} из ${T.length}</small>${!last?'<button type="button" class="tour-skip">Пропустить</button>':''}<button type="button" class="tour-next">${!last?'Дальше →':'Понятно 👍'}</button></div>`;
+  mountAnims(tip);
+  if(el){const r=el.getBoundingClientRect(),h=tip.offsetHeight;
+    tip.style.top=(r.bottom+16+h<innerHeight?r.bottom+16:r.top-16-h>8?r.top-16-h:Math.max(8,innerHeight-h-12))+'px'}
+  else tip.style.top=Math.max(20,(innerHeight-tip.offsetHeight)/2)+'px';
+  tip.querySelector('.tour-next').onclick=()=>{TI++;if(TI>=T.length)endTour();else drawTour()};
   const sk=tip.querySelector('.tour-skip');if(sk)sk.onclick=endTour;
 }
+function tabTour(id){
+  if(!S.onboarded||S.demo||document.querySelector('.tour-tip')||!$('wiz').hidden)return;
+  const key=id==='t-env'?(S.mode==='env'?'env':'envS'):id==='t-tx'?'tx':id==='t-food'?'food':null;
+  if(!key||(S.seen||{})[key])return;
+  setTimeout(()=>{if(!document.querySelector('.tour-tip'))runTour(key)},350);
+}
+/* задание: первая запись */
+function startQuest(){
+  S.quest={n:S.tx.length};save();
+  const bg=document.createElement('div');bg.className='sheet-bg';
+  bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><h3>✍️ Последний шаг: попробуй сам</h3><p>Напиши боту свою первую трату, например «кофе 300». Когда она появится здесь, получишь значок 🏅</p><div class="anim bc" data-anim="bot"></div>
+  <button type="button" class="btn" data-q="go">💬 Перейти в чат с ботом</button><button type="button" class="btn ghost" data-q="later">Позже</button></div>`;
+  document.body.appendChild(bg);mountAnims(bg);
+  bg.addEventListener('click',e=>{const b=e.target.closest('[data-q]');if(e.target!==bg&&!b)return;bg.remove();
+    if(b&&b.dataset.q==='go'&&inTG){try{tg.close()}catch(x){}}});
+}
+function checkQuest(){
+  if(!S.quest||S.demo||S.tx.length<=S.quest.n)return;
+  S.quest=null;S.badges=S.badges||{};S.badges.first=dstr(new Date());save();
+  setTimeout(()=>{burst(['🎉','🏅','✨','💸','🥳'],null,null,28);
+    sheet('🏅 Первая запись!','Ты получил значок «Первый шаг». Записывай так каждую трату, и через неделю увидишь, куда на самом деле уходят деньги.','Совет: включи вечернее напоминание в ⚙️ Настройках, чтобы ничего не забыть.')},500);
+}
+/* ---------- анимации ---------- */
+function loopAnim(el,fn){const t0=performance.now();const f=now=>{if(!el.isConnected)return;if(el.getClientRects().length)fn((now-t0)/1000);requestAnimationFrame(f)};requestAnimationFrame(f)}
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const ease=x=>x<0?0:x>1?1:x*x*(3-2*x);
+function kf(points,t){for(let i=1;i<points.length;i++){const [t0,v0]=points[i-1],[t1,v1]=points[i];if(t<=t1)return v0+(v1-v0)*ease((t-t0)/(t1-t0))}return points[points.length-1][1]}
+const ANIMS={
+  slider(el){const INC=50000;
+    el.innerHTML=`<div class="sl-top"><span>🛒 Еда</span><b class="sl-sum"></b></div><div class="sl-track"><i class="sl-fill"></i><span class="sl-thumb"></span><span class="sl-hand">👆</span></div><div class="sl-bot"><span>свободно ${fmt(INC)} → 100%</span><b class="sl-pct"></b></div>`;
+    const [sum,fill,th,hand,pc]=['.sl-sum','.sl-fill','.sl-thumb','.sl-hand','.sl-pct'].map(x=>el.querySelector(x));
+    const K=[[0,0],[.8,0],[2.8,40],[4.2,40],[5.2,25],[6.6,25],[7.2,0]];
+    const draw=t=>{t=t%7.2;const v=RM?40:kf(K,t);fill.style.width=v+'%';th.style.left=v+'%';hand.style.left=v+'%';
+      hand.classList.toggle('press',!RM&&((t>.6&&t<2.9)||(t>4.1&&t<5.3)));
+      pc.textContent=Math.round(v)+'%';sum.textContent=fmt(Math.round(INC*v/100/100)*100)};
+    RM?draw(0):loopAnim(el,draw)},
+  alloc(el){const SEG=[['🛒 Еда',40,'--e1'],['🚕 Транспорт',15,'--e2'],['☕ Кафе',10,'--e3'],['🐷 Копилка',35,'--e5']];
+    el.innerHTML=`<div class="al-num"><span>Распределено</span><b>0%</b></div><div class="al-bar">${SEG.map(x=>`<i style="background:var(${x[2]});width:0"></i>`).join('')}</div><div class="al-leg">${SEG.map(x=>`<span>${x[0]} ${x[1]}%</span>`).join('')}</div><div class="al-ok">✅ Ровно 100%: у каждого рубля есть задача</div>`;
+    const bars=[...el.querySelectorAll('.al-bar i')],num=el.querySelector('.al-num'),b=num.querySelector('b');
+    const draw=t=>{t=t%7;const f=RM?100:Math.min(100,Math.max(0,(t-.5)/3.5*100));let acc=0;
+      SEG.forEach((x,i)=>{bars[i].style.width=Math.max(0,Math.min(x[1],f-acc))+'%';acc+=x[1]});
+      b.textContent=Math.round(f)+'%';num.classList.toggle('done',f>=100);el.querySelector('.al-ok').classList.toggle('on',f>=100)};
+    RM?draw(0):loopAnim(el,draw)},
+  bot(el){const L=[['кофе 300',()=>`☕ −${fmt(300)} → «Кафе»<br>Осталось в конверте: ${fmt(2700)}`],['вчера такси 500',()=>`🚕 −${fmt(500)} → «Транспорт»<br>📅 Записал на вчера`],['еда 50 ю',()=>`🛒 −50 ¥ → «Еда»`],['отложил 5к',()=>`🐷 +${fmt(5000)} → «Копилка»`],['итоги',()=>`📊 Итоги месяца:<br>потрачено ${fmt(23400)}, отложено ${fmt(5000)}`]];
+    el.innerHTML='<div class="chat"></div><div class="dots"></div>';const chat=el.firstChild,dots=el.lastChild;let cur=-1;
+    const draw=t=>{const i=RM?0:Math.floor(t/3.2)%L.length;if(i===cur)return;cur=i;
+      chat.innerHTML=`<div class="msg me">${L[i][0]}</div><div class="msg bot">${L[i][1]()}</div>`;dots.textContent=L.map((_,j)=>j===i?'●':'○').join(' ')};
+    RM?draw(0):loopAnim(el,draw)}
+};
+function mountAnims(root){root.querySelectorAll('[data-anim]').forEach(el=>{if(el._on)return;el._on=1;ANIMS[el.dataset.anim](el)})}
 
 /* ---------- настройки ---------- */
 function openSettings(){
