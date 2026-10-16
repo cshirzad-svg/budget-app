@@ -749,7 +749,7 @@ export async function advise(env, state, question) {
   const by = {};
   list.forEach((t) => { const c = catInfo(t.env, state); by[c.name] = (by[c.name] || 0) + t.sum; });
   const plan = getCats(state).filter((c) => !c.save && c.amt).map((c) => `${c.name}: план ${Math.round(c.amt)}`).join('; ');
-  const ctx = `Валюта: ${main}. Месяц: ${P.label}, прошло ${P.elapsed} из ${P.days} дней. Траты по категориям: ${Object.entries(by).map(([k, v]) => `${k} ${Math.round(v)}`).join(', ') || 'нет'}. ${plan ? 'Планы: ' + plan + '.' : ''} Доход: ${state.income || 'не указан'}.`;
+  const ctx = `Валюта: ${main}. Месяц: ${P.label}; с начала месяца прошло ${P.elapsed} дней из ${P.days} (это дни, не деньги). Траты по категориям: ${Object.entries(by).map(([k, v]) => `${k} ${Math.round(v)}`).join(', ') || 'нет'}. ${plan ? 'Планы: ' + plan + '.' : ''} Доход: ${state.income || 'не указан'}.`;
   const sys = 'Ты дружелюбный помощник по личным финансам внутри бота «Бюджет в конвертах». Отвечай по-русски, коротко (до 6 предложений), конкретно и по цифрам пользователя. Без markdown, можно эмодзи. Не давай инвестиционных советов про конкретные акции или крипту.';
   return (await aiText(env, [{ role: 'system', content: sys }, { role: 'user', content: ctx + '\n\nВопрос: ' + question }], 500)).trim();
 }
@@ -806,7 +806,7 @@ async function foodMenu(env, st, state, chat, request, origin) {
   const flags = { ...((state.srv || {}).flags || {}), chef: 1 };
   await st.srvPatch({ menuAI: m, flags });
   await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: menuSummary(m, { ...state, srv: { ...(state.srv || {}), menuAI: m } }, await getRates()),
-    reply_markup: { inline_keyboard: [[{ text: '📖 Открыть меню и список', web_app: { url: origin + '/#food' } }], [{ text: '🔄 Другое меню', callback_data: 'm:again' }, { text: '💸 Подешевле', callback_data: 'm:cheap' }]] } });
+    reply_markup: { inline_keyboard: [[{ text: '📖 Открыть меню и список', web_app: { url: origin + '/?tab=food' } }], [{ text: '🔄 Другое меню', callback_data: 'm:again' }, { text: '💸 Подешевле', callback_data: 'm:cheap' }]] } });
 }
 
 async function onUpdate(update, env, origin) {
@@ -959,7 +959,7 @@ async function onUpdate(update, env, origin) {
       let m = null; try { m = await swapMeal(env, state, di, mi, ''); } catch (e) { console.error('swap', e); }
       if (!m) { await tg(env, 'sendMessage', { chat_id: chat, text: '😕 Не получилось заменить, попробуй ещё раз.' }); return; }
       await st.srvPatch({ menuAI: m });
-      await tg(env, 'sendMessage', { chat_id: chat, text: `🔄 ${DAYS7[di]}, ${MEALS[mi]}: «${old}» → «${m.days[di][mi + 1]}»`, reply_markup: { inline_keyboard: [[{ text: '📖 Открыть меню', web_app: { url: origin + '/#food' } }]] } });
+      await tg(env, 'sendMessage', { chat_id: chat, text: `🔄 ${DAYS7[di]}, ${MEALS[mi]}: «${old}» → «${m.days[di][mi + 1]}»`, reply_markup: { inline_keyboard: [[{ text: '📖 Открыть меню', web_app: { url: origin + '/?tab=food' } }]] } });
       return;
     }
     await foodMenu(env, st, state, chat, /^(подешевле|дешевле)$/i.test(text) ? ((srv.menuAI && srv.menuAI.q) || '') + ', подешевле' : text, origin);

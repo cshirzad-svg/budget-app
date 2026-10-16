@@ -405,7 +405,7 @@ input[type=number]{-moz-appearance:textfield}
 .chef-cur{display:flex;align-items:center;gap:8px;justify-content:space-between;background:var(--soft);border-radius:12px;padding:10px 12px;font-size:14px}
 .chef-cur button{border:0;background:none;color:var(--accent);font:600 13px var(--body);cursor:pointer;padding:0;flex:none}
 .pref-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
-.meal{grid-template-columns:76px 1fr auto!important;align-items:center}
+.meal{grid-template-columns:88px 1fr auto!important;align-items:center}
 .swap{border:1px solid var(--line);background:var(--soft);border-radius:10px;width:34px;height:34px;cursor:pointer;font-size:15px}
 .swap.busy{animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -598,7 +598,7 @@ input[type=number]{-moz-appearance:textfield}
     <div class="card" id="chefCard">
       <h2>👨‍🍳 ИИ-повар<button type="button" class="help" data-help="chef" aria-label="Что это?">?</button></h2>
       <p class="hint" style="margin:0">Скажи, что хочешь есть на неделе. Составлю меню и список покупок под твой бюджет.</p>
-      <div class="qchips" id="chefChips"><button type="button" data-q="китайская кухня">🇨🇳 Китайская</button><button type="button" data-q="больше рыбы и овощей">🐟 Рыба и овощи</button><button type="button" data-q="быстрые блюда до 30 минут">⚡ Быстро</button><button type="button" data-q="максимально дёшево">💸 Подешевле</button><button type="button" data-q="правильное питание, много белка">🥗 ПП</button><button type="button" data-q="без мяса">🌱 Без мяса</button></div>
+      <div class="qchips" id="chefChips"><button type="button" data-q="китайская кухня">🥢 Китайская</button><button type="button" data-q="больше рыбы и овощей">🐟 Рыба и овощи</button><button type="button" data-q="быстрые блюда до 30 минут">⚡ Быстро</button><button type="button" data-q="максимально дёшево">💸 Подешевле</button><button type="button" data-q="правильное питание, много белка">🥗 ПП</button><button type="button" data-q="без мяса">🌱 Без мяса</button></div>
       <textarea id="chefIn" rows="2" maxlength="300" placeholder="Например: китайская кухня, без свинины, побольше овощей"></textarea>
       <div class="pref-row"><span>🚫 Не использовать:</span><input type="text" id="prefIn" maxlength="200" placeholder="грибы, свинина…"></div>
       <button type="button" class="btn" id="chefGo">✨ Составить меню</button>
@@ -1372,7 +1372,7 @@ $('bkDone').addEventListener('click',()=>{
 $('days').addEventListener('click',e=>{if(e.target.dataset.day){day=+e.target.dataset.day;renderFood()}});
 $('shop').addEventListener('change',e=>{const id=e.target.dataset.item;if(!id)return;S.checked[id]=e.target.checked;renderFood();save();if(e.target.checked){const all=document.querySelectorAll('#shop input').length,done=document.querySelectorAll('#shop input:checked').length;if(done===all){burst(['🎉','🛒','✨','🥳']);toast('🥳 Список закрыт! Ни одной лишней покупки');S.shopDone=1;save()}}});
 $('pMinus').addEventListener('click',()=>{if(S.people>1){S.people--;renderFood();save()}});
-if(location.hash==='#food'&&S.mode!=='simple')setTimeout(()=>selectTab('t-food'),50);
+if(/[?&]tab=food/.test(location.search)&&S.mode!=='simple')setTimeout(()=>selectTab('t-food'),50);
 $('pPlus').addEventListener('click',()=>{if(S.people<8){S.people++;renderFood();save()}});
 
 /* ---------- мастер старта ---------- */
