@@ -232,7 +232,7 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
 .sheet{background:var(--paper);color:var(--ink);width:100%;max-width:600px;border-radius:20px 20px 0 0;padding:20px;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px;box-shadow:0 -8px 30px rgba(0,0,0,.2);animation:up .25s ease}
 .sheet h3{font-family:var(--display);font-weight:500;font-size:17px;margin:0}
 .sheet p{margin:0;color:var(--ink);line-height:1.55}
-.sheet .ex{background:var(--soft);border-radius:12px;padding:10px 12px;font-size:14px;color:var(--muted)}
+.sheet .ex{white-space:pre-line;background:var(--soft);border-radius:12px;padding:10px 12px;font-size:14px;color:var(--muted)}
 @keyframes up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
 /* тур */
 .tour-hole{position:fixed;z-index:50;border-radius:14px;box-shadow:0 0 0 9999px rgba(10,12,18,.62);transition:all .3s ease;pointer-events:none;outline:3px solid var(--accent);outline-offset:3px}
@@ -297,6 +297,8 @@ textarea{width:100%;box-sizing:border-box;font:500 15px var(--body);color:var(--
 .tbl tr.tot td{font-weight:700;border-bottom:0}
 .tbl td.z{color:var(--line)}
 /* пустой старт */
+.kpi .chip:not(.good):not(.bad){background:var(--soft);color:var(--muted)}
+.kpi[data-help]{cursor:pointer}.qi{opacity:.5;font-size:11px}
 .empty-start{background:var(--accent-soft);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:8px}
 .empty-start b{font-family:var(--display);font-weight:500;font-size:16px}
 .empty-start p{margin:0;font-size:14px}
@@ -341,9 +343,9 @@ textarea{width:100%;box-sizing:border-box;font:500 15px var(--body);color:var(--
     <div class="empty-start" id="emptyStart" hidden><b>👋 Здесь пока пусто</b><p>Запиши первую трату: напиши боту <code>кофе 300</code> или открой вкладку «🧾 Траты». Через пару трат здесь появятся графики.</p></div>
     <div class="mascot only-env"><span class="face" id="face">😎</span><div><b id="moodT"></b><p id="moodP"></p></div></div>
     <div class="kpis only-env">
-      <div class="kpi"><small>💸 Потрачено</small><b id="k-spent"></b><span class="chip" id="k-spent-chip"></span></div>
-      <div class="kpi"><small>☀️ Можно в день</small><b id="k-daily"></b><span class="chip" id="k-daily-chip"></span></div>
-      <div class="kpi"><small>🔮 Прогноз на месяц</small><b id="k-fore"></b><span class="chip" id="k-fore-chip"></span></div>
+      <div class="kpi" data-help="kspent"><small>💸 Потрачено <span class="qi">ⓘ</span></small><b id="k-spent"></b><span class="chip" id="k-spent-chip"></span></div>
+      <div class="kpi" data-help="kdaily"><small>☀️ Можно тратить в день <span class="qi">ⓘ</span></small><b id="k-daily"></b><span class="chip" id="k-daily-chip"></span></div>
+      <div class="kpi" data-help="kfore"><small>🔮 Прогноз на месяц <span class="qi">ⓘ</span></small><b id="k-fore"></b><span class="chip" id="k-fore-chip"></span></div>
       <div class="kpi"><small>🐷 Отложено</small><b id="k-save"></b><span class="chip good" id="k-save-chip"></span></div>
     </div>
     <div class="card only-env">
@@ -689,11 +691,17 @@ function render(){
   const saved=saveCats().reduce((a,e)=>a+e.spent,0);
   const set=(id,t)=>$(id).textContent=t;
   const chip=(id,good,t)=>{const c=$(id);c.className='chip '+(good?'good':'bad');c.textContent=t};
+  const nc=(id,t)=>{const c=$(id);c.className='chip';c.textContent=t};
+  if(!plan){set('k-spent',fmt(spent));nc('k-spent-chip','план не задан');
+    set('k-daily','—');nc('k-daily-chip','задай план в «Конвертах»');
+    set('k-fore',P.cur&&spent?fmt(fore):'—');nc('k-fore-chip',P.cur&&spent?'если тратить так же':'появится после трат');
+    set('k-save',fmt(saved)); set('k-save-chip','за этот месяц');
+  }else{
   set('k-spent',fmt(spent)); chip('k-spent-chip',diff>=0,diff>=0?`▼ на ${fmt(diff)} меньше плана`:`▲ на ${fmt(-diff)} больше плана`);
-  if(P.cur){set('k-daily',fmt(daily));chip('k-daily-chip',daily>=normDaily,`${daily>=normDaily?'▲':'▼'} норма ${fmt(normDaily)}`)}
+  if(P.cur){set('k-daily',fmt(daily));chip('k-daily-chip',daily>=normDaily,`${daily>=normDaily?'▲':'▼'} обычно ${fmt(normDaily)}`)}
   else{set('k-daily','—');chip('k-daily-chip',true,'месяц закрыт')}
   set('k-fore',fmt(fore)); chip('k-fore-chip',fore<=plan,fore<=plan?`останется ${fmt(plan-fore)}`:`не хватит ${fmt(fore-plan)}`);
-  set('k-save',fmt(saved)); set('k-save-chip','за этот месяц');
+  set('k-save',fmt(saved)); set('k-save-chip','за этот месяц');}
   const mood=!P.cur?(spent<=plan?['🏆','Месяц закрыт в плюсе',`Потрачено ${fmt(spent)} из ${fmt(plan)}. Сэкономлено ${fmt(plan-spent)}.`]:['😵‍💫','Месяц закрыт с перерасходом',`Потрачено ${fmt(spent)} при плане ${fmt(plan)}.`])
    :!plan?['🙂','Задай план по конвертам','Впиши доход и суммы во вкладке «Конверты», и я буду следить за темпом.']
    :!txP.some(t=>!byId(t.env).save)?['🙂','Трат пока нет',`На месяц у тебя ${fmt(plan)}, это ${fmt(normDaily)} в день. Записывай траты, и я буду следить за темпом.`]
@@ -757,6 +765,7 @@ function renderSimple(P,txP,txPP){
   const rows=Object.entries(by), total=rows.reduce((a,[c,v])=>a+(conv(v,c,S.cur)||0),0);
   $('s-saves').innerHTML=rows.length?rows.map(([c,v])=>`<div class="save-row"><span>${CUR[c]?CUR[c][1]:c}</span><b>${fmtC(v,c)}</b></div>`).join('')+(rows.length>1||rows[0][0]!==S.cur?`<div class="save-row"><span>Всего ≈</span><b>${fmt(total)}</b></div>`:''):'<p class="hint">Пока ничего не отложено. Напиши боту: «отложил 5к юаней» 🐷</p>';
 }
+const lab=e=>(e.ic+' '+((e.name||'').trim()||'Без названия')).replace(/\uFE0F/g,'');
 function drawCharts(P,txP,plan,sc){
   if(!window.Chart)return;
   const ink=css('--muted'), line=css('--line'), acc=css('--accent'), good=css('--good');
@@ -771,20 +780,20 @@ function drawCharts(P,txP,plan,sc){
       {label:'Потрачено',data:actual,borderColor:acc,backgroundColor:acc+'22',borderWidth:3,pointRadius:actual.map((_,i)=>i===P.elapsed-1?5:0),pointBackgroundColor:acc,fill:true,tension:.3}]},
       {responsive:true,maintainAspectRatio:false,animation:{duration:500},interaction:{mode:'index',intersect:false},
        plugins:{legend:{labels:{boxWidth:12,usePointStyle:true}},tooltip:{callbacks:{title:i=>i[0].label+' число',label:i=>' '+i.dataset.label+': '+fmt(i.raw)}}},
-       scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8}},y:{grid:{color:line},ticks:{callback:v=>v>=1000?(v/1000)+'к':v}}}});
-    upsert('c-bars','bar',{labels:sc.map(e=>e.ic+' '+e.name),datasets:[
+       scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8}},y:{beginAtZero:true,suggestedMax:100,grid:{color:line},ticks:{precision:0,callback:v=>v>=1000?(v/1000)+'к':v}}}});
+    upsert('c-bars','bar',{labels:sc.map(lab),datasets:[
       {label:'План на месяц',data:sc.map(e=>Math.round(e.amt||0)),backgroundColor:css('--soft'),borderColor:line,borderWidth:1,borderRadius:6},
       {label:'Потрачено',data:sc.map(e=>e.spent),backgroundColor:sc.map(e=>e.spent>(e.amt||0)?css('--bad'):css(e.c)),borderRadius:6}]},
       {indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:500},
        plugins:{legend:{labels:{boxWidth:12}},tooltip:{callbacks:{label:i=>' '+i.dataset.label+': '+fmt(i.raw)}}},
-       scales:{x:{grid:{color:line},ticks:{callback:v=>v>=1000?(v/1000)+'к':v}},y:{grid:{display:false}}},datasets:{bar:{grouped:false}}});
+       scales:{x:{beginAtZero:true,suggestedMax:100,grid:{color:line},ticks:{precision:0,callback:v=>v>=1000?(v/1000)+'к':v}},y:{grid:{display:false}}},datasets:{bar:{grouped:false}}});
   }else{
     upsert('c-days','bar',{labels,datasets:[{label:'Потрачено',data:perDay.map((v,i)=>i>=P.elapsed?null:v),backgroundColor:labels.map((_,i)=>i===P.elapsed-1&&P.cur?acc:acc+'88'),borderRadius:4}]},
       {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:i=>' '+fmt(i.raw)}}},
-       scales:{x:{grid:{display:false},ticks:{maxTicksLimit:10}},y:{grid:{color:line},ticks:{callback:v=>v>=1000?(v/1000)+'к':v}}}});
+       scales:{x:{grid:{display:false},ticks:{maxTicksLimit:10}},y:{beginAtZero:true,suggestedMax:100,grid:{color:line},ticks:{precision:0,callback:v=>v>=1000?(v/1000)+'к':v}}}});
   }
   const withSpent=spendCats().filter(e=>e.spent>0), total=withSpent.reduce((a,e)=>a+e.spent,0);
-  upsert('c-donut','doughnut',{labels:withSpent.map(e=>e.ic+' '+e.name),datasets:[{data:withSpent.map(e=>e.spent),backgroundColor:withSpent.map(e=>css(e.c)),borderColor:css('--paper'),borderWidth:3}]},
+  upsert('c-donut','doughnut',{labels:withSpent.map(lab),datasets:[{data:withSpent.map(e=>e.spent),backgroundColor:withSpent.map(e=>css(e.c)),borderColor:css('--paper'),borderWidth:3}]},
     {responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:i=>' '+fmt(i.raw)}}}});
   $('legend').innerHTML=withSpent.length?withSpent.sort((a,b)=>b.spent-a.spent).map(e=>`<div><i style="background:${css(e.c)}"></i><span>${e.ic} ${esc(e.name)}</span><span>${Math.round(e.spent/total*100)}%</span></div>`).join(''):'<p class="hint">Трат пока нет</p>';
 }
@@ -1083,6 +1092,9 @@ function exitDemo(silent){
 
 /* ---------- подсказки «?» ---------- */
 const HELP={
+  kspent:['💸 Потрачено','Сколько ты уже потратил в этом месяце (без копилок). Зелёная плашка — ты тратишь медленнее плана, красная — быстрее.'],
+  kdaily:['☀️ Можно тратить в день','Сколько можно тратить каждый день до конца месяца, чтобы уложиться в план. Считается так: (план − уже потрачено) ÷ оставшиеся дни.','Пример: план 30 000 ₽, потрачено 10 000 ₽, осталось 10 дней → можно 2 000 ₽ в день. «Обычно» — сколько выходит в день, если делить план поровну на весь месяц.\n\nЧтобы цифра появилась, задай доход и суммы во вкладке «Конверты».'],
+  kfore:['🔮 Прогноз на месяц','Сколько ты потратишь к концу месяца, если продолжишь тратить в том же темпе.'],
   days:['📅 По дням','Сколько ты тратил в каждый день месяца. Высокие столбики — дорогие дни. Сегодняшний подсвечен.'],
   pace:['📈 Темп трат','Пунктир — сколько можно было потратить к каждому дню, чтобы уложиться в план. Твоя линия ниже пунктира — ты в плюсе, выше — тратишь быстрее плана.'],
   donut:['🍩 Куда уходят деньги','Доля каждой категории во всех тратах за месяц. Сразу видно, что съедает больше всего.'],
@@ -1124,10 +1136,10 @@ function endTour(){document.querySelectorAll('.tour-block,.tour-hole,.tour-tip')
 function drawTour(){
   const [sel,t,p]=TOUR[TI], hole=document.querySelector('.tour-hole'), tip=document.querySelector('.tour-tip');
   const el=sel?[...document.querySelectorAll(sel)].find(x=>x.offsetParent):null;
-  if(el){el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect(),pd=6;
+  if(el){hole.style.outlineWidth='';el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect(),pd=6;
     Object.assign(hole.style,{display:'block',left:r.left-pd+'px',top:r.top-pd+'px',width:r.width+pd*2+'px',height:r.height+pd*2+'px'});
     const below=r.bottom+16+200<innerHeight; tip.style.top=(below?r.bottom+16:Math.max(12,r.top-16-tip.offsetHeight||170))+'px';
-  }else{hole.style.display='none';tip.style.top=Math.max(20,innerHeight*0.2)+'px'}
+  }else{Object.assign(hole.style,{display:'block',left:'50%',top:'50%',width:'0px',height:'0px',outlineWidth:'0px'});tip.style.top=Math.max(20,innerHeight*0.12)+'px'}
   tip.innerHTML=`<b>${t}</b><p>${p}</p>${sel?'':ANIM}<div class="row2"><small>${TI+1} из ${TOUR.length}</small>${TI<TOUR.length-1?'<button type="button" class="tour-skip">Пропустить</button>':''}<button type="button" class="tour-next">${TI<TOUR.length-1?'Дальше →':'Понятно 👍'}</button></div>`;
   if(el){const r=el.getBoundingClientRect();const below=r.bottom+16+tip.offsetHeight<innerHeight;tip.style.top=(below?r.bottom+16:Math.max(12,r.top-16-tip.offsetHeight))+'px'}
   tip.querySelector('.tour-next').onclick=()=>{TI++;if(TI>=TOUR.length)endTour();else drawTour()};
