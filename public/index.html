@@ -600,6 +600,11 @@ input[type=number]{-moz-appearance:textfield}
       </form>
     </div>
     <div class="card">
+      <h2>📥 Выписка из банка<button type="button" class="help" data-help="imp" aria-label="Что это?">?</button></h2>
+      <p class="hint" style="margin:0">Загрузи CSV-файл с операциями из приложения или сайта банка, и я сам разнесу траты по категориям. Дубли не появятся.</p>
+      <label class="btn ghost" style="text-align:center;cursor:pointer">📂 Выбрать файл выписки<input type="file" id="impFile" accept=".csv,.txt,text/csv" hidden></label>
+    </div>
+    <div class="card">
       <h2><span id="txTitle">🧾 Траты за месяц</span><button type="button" class="help" data-help="txlist" aria-label="Что это?">?</button></h2>
       <p class="hint">Нажми на трату, чтобы изменить сумму, дату или категорию.</p>
       <div id="txList"></div>
@@ -1203,6 +1208,67 @@ function shareMonth(){
   teamCall({act:'pic',png:c.toDataURL('image/png')}).then(j=>{if(j.ok){toast('📸 Картинка в чате с ботом. Перешли или выложи в сторис!');burst(['📸','✨'])}else toast('😕 Не получилось отправить')});
 }
 $('sharePic').addEventListener('click',shareMonth);
+
+/* ---------- импорт выписки ---------- */
+function decodeBuf(buf){let t=new TextDecoder('utf-8').decode(buf);if((t.match(/�/g)||[]).length>2){try{t=new TextDecoder('windows-1251').decode(buf)}catch(e){}}return t.replace(/^﻿/,'')}
+function parseCSV(t){
+  const first=t.split(/\r?\n/).find(l=>l.trim())||'';const sep=[';','\t',','].map(c=>[c,first.split(c).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  const rows=[];let row=[],f='',q=false;
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){if(ch==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=ch}
+    else if(ch==='"')q=true;else if(ch===sep){row.push(f);f=''}else if(ch==='\n'){row.push(f);rows.push(row);row=[];f=''}else if(ch!=='\r')f+=ch}
+  if(f||row.length){row.push(f);rows.push(row)}
+  return rows.filter(r=>r.some(x=>x.trim()))}
+const IMPKW=[['food',/супермаркет|продукт|магнит|пят[её]рочк|перекр[её]ст|ашан|лента|вкусвилл|дикси|spar|fix price|окей|бакале|мясо|овощ/],['fun',/рестора|кафе|кофе|фастфуд|бар|кино|развлеч|доставк[аи] еды|яндекс еда|delivery club|самокат|бургер|пицц|суши|театр|концерт/],
+ ['transport',/такси|транспорт|метро|авиа|жд |ржд|топлив|азс|бензин|парков|каршер|автобус|uber|яндекс go/],['health',/аптек|медиц|здоров|клиник|стомат|врач|анализ/],['clothes',/одежд|обув|zara|h&m|спортмастер|lamoda/],
+ ['kids',/детск|игрушк|детский мир/],['shop',/маркетплейс|ozon|озон|wildberries|вайлдберриз|aliexpress|яндекс маркет|мегамаркет/],['home',/жкх|коммун|связь|мобильн|интернет|ремонт|хоз|строит|леруа|икеа|ikea|дом /]];
+function impCat(text){const t=text.toLowerCase();
+  const names=S.cats.filter(c=>!c.save);
+  const byName=names.find(c=>t.includes(c.name.toLowerCase()));if(byName)return byName.id;
+  for(const [id,re] of IMPKW)if(re.test(t)){const c=names.find(x=>x.id===id)||(id==='shop'&&names.find(x=>x.id==='clothes'))||(id==='home'&&names.find(x=>/жиль|быт|дом|связ/i.test(x.name)))||(id==='fun'&&names.find(x=>/кафе|отдых|развлеч/i.test(x.name)))||(id==='food'&&names.find(x=>/прод|еда/i.test(x.name)));if(c)return c.id}
+  const o=names.find(c=>c.id==='other')||names.find(c=>/проч/i.test(c.name));return o?o.id:'__other'}
+const pDate=v=>{v=String(v||'').trim();let m=v.match(/(\d{2})\.(\d{2})\.(\d{4})/);if(m)return `${m[3]}-${m[2]}-${m[1]}`;m=v.match(/(\d{4})-(\d{2})-(\d{2})/);if(m)return m[0];m=v.match(/(\d{2})\/(\d{2})\/(\d{4})/);if(m)return `${m[3]}-${m[2]}-${m[1]}`;return null};
+const pNum=v=>{const t=String(v||'').replace(/[\s ]/g,'').replace(',','.').replace(/[^\d.\-−]/g,'').replace('−','-');const n=parseFloat(t);return isFinite(n)?n:null};
+function readStatement(rows){
+  let hi=rows.findIndex(r=>r.some(c=>/дата/i.test(c))&&r.some(c=>/сумм|расход|списан|amount/i.test(c)));if(hi<0)return null;
+  const h=rows[hi].map(x=>x.toLowerCase().trim()),col=(...res)=>{for(const re of res){const i=h.findIndex(x=>re.test(x));if(i>=0)return i}return -1};
+  const cD=col(/дата операции/,/^дата/,/date/),cA=col(/сумма операции/,/сумма платежа/,/^сумма/,/amount/),cDeb=col(/расход|списани|debit/),cCur=col(/валюта операции/,/валюта/,/currency/),
+   cDesc=col(/описание/,/назначение/,/получатель|контрагент|merchant|description/),cCat=col(/категори/,/category/),cSt=col(/статус/,/status/);
+  if(cD<0||(cA<0&&cDeb<0))return null;
+  const data=rows.slice(hi+1);const anyNeg=cA>=0&&data.some(r=>(pNum(r[cA])||0)<0);
+  const out=[];
+  data.forEach(r=>{const date=pDate(r[cD]);if(!date)return;if(cSt>=0&&/fail|отклон|отмен/i.test(r[cSt]||''))return;
+    let amt=null;if(cDeb>=0&&pNum(r[cDeb]))amt=Math.abs(pNum(r[cDeb]));else if(cA>=0){const n=pNum(r[cA]);if(n==null)return;if(anyNeg){if(n>=0)return;amt=-n}else amt=n}
+    if(!amt)return;
+    let cur=String(cCur>=0?r[cCur]:'').toUpperCase().trim();cur=cur==='RUR'||cur==='₽'||cur==='РУБ'||!cur?'RUB':cur;if(!CUR[cur])cur='RUB';
+    const desc=String(cDesc>=0?r[cDesc]:'').trim(),bcat=String(cCat>=0?r[cCat]:'').trim();
+    const transfer=/перевод|пополнен|снятие наличных|наличные|между своими|cash/i.test(bcat+' '+desc);
+    out.push({date,amt,cur,desc,bcat,transfer,env:impCat(bcat+' '+desc),imp:`${date}|${amt}|${desc.slice(0,40)}`})});
+  return out}
+$('impFile').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+  if(S.demo){toast('В примере импорт не работает 🙂');return}
+  f.arrayBuffer().then(buf=>{const list=readStatement(parseCSV(decodeBuf(buf)));
+    if(!list||!list.length){toast('😕 Не нашёл в файле траты. Нужен CSV с колонками «Дата» и «Сумма»');return}
+    const have=new Set(S.tx.map(t=>t.imp).filter(Boolean)),fresh=list.filter(x=>!have.has(x.imp));
+    if(!fresh.length){toast('Все эти траты уже загружены 👍');return}
+    if(fresh.some(x=>x.env==='__other')){if(!S.cats.some(c=>c.id==='other')){S.cats.push({id:'other',ic:'📦',name:'Прочее',c:COLORS[S.cats.length%COLORS.length],save:false,amt:0,target:0,before:0});buildCats()}fresh.forEach(x=>{if(x.env==='__other')x.env='other'})}
+    const nT=fresh.filter(x=>x.transfer).length;
+    const sumOf=arr=>arr.reduce((a,x)=>a+(conv(x.amt,x.cur,S.cur)||0),0);
+    const dates=fresh.map(x=>x.date).sort(),d1=dparse(dates[0]),d2=dparse(dates[dates.length-1]);
+    const draw=(withT)=>{const use=fresh.filter(x=>withT||!x.transfer),by={};use.forEach(x=>by[x.env]=(by[x.env]||0)+(conv(x.amt,x.cur,S.cur)||0));
+      return `<p>Нашёл <b>${use.length}</b> трат на <b>${fmt(sumOf(use))}</b> с ${d1.getDate()} ${MON3[d1.getMonth()]} по ${d2.getDate()} ${MON3[d2.getMonth()]} ${d2.getFullYear()}.</p><div class="day-list">${Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([id,v])=>{const c=byId(id);return `<div><span>${c.ic} ${esc(c.name)}</span><b>${fmt(v)}</b></div>`}).join('')}</div>`};
+    const bg=document.createElement('div');bg.className='sheet-bg';
+    bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><h3>📥 Выписка: ${esc(f.name).slice(0,40)}</h3><div id="impBody">${draw(false)}</div>
+      ${nT?`<label class="sw-row" style="font-size:14px"><span class="lbl">Добавить переводы и снятия наличных (${nT})<small>обычно это не траты</small></span><span class="switch"><input type="checkbox" id="impT"><span></span></span></label>`:''}
+      <button type="button" class="btn" data-i="ok">Загрузить</button><button type="button" class="btn ghost" data-i="no">Отмена</button></div>`;
+    document.body.appendChild(bg);
+    const tgl=bg.querySelector('#impT');if(tgl)tgl.addEventListener('change',()=>{bg.querySelector('#impBody').innerHTML=draw(tgl.checked)});
+    bg.addEventListener('click',ev=>{const b=ev.target.closest('[data-i]');if(ev.target!==bg&&!b)return;
+      if(b&&b.dataset.i==='ok'){const use=fresh.filter(x=>(tgl&&tgl.checked)||!x.transfer);let n=0,id=Date.now();
+        use.forEach(x=>{const t=mkTx(x.amt,x.cur,x.env,x.date,x.desc.slice(0,60));if(t){t.id=id++;t.src='import';t.imp=x.imp;S.tx.push(t);n++}});
+        save();render();burst(['📥','✨','📊'],null,null,20);toast(`📥 Загружено трат: ${n}. Проверь категории во вкладке «Траты»`)}
+      bg.remove()})
+  }).catch(()=>toast('😕 Не получилось прочитать файл'))});
 function renderHistory(){
   const rows=[];
   for(let o=0;o>=-5;o--){const P=periodOf(o),t=S.tx.filter(x=>inP(x,P));
@@ -1223,7 +1289,7 @@ function renderTx(P,txP){
   for(const t of list){
     if(t.date!==last){last=t.date;const d=dparse(t.date);h+=`<div class="dayhead">${t.date===TODAYS?'Сегодня':t.date===dstr(addDays(NOW,-1))?'Вчера':`${d.getDate()} ${MON3[d.getMonth()]}`}</div>`}
     const e=byId(t.env), amt=t.cur&&t.cur!==S.cur?fmtC(t.orig,t.cur)+`<small>≈ ${fmt(t.sum)}</small>`:fmt(t.sum);
-    h+=`<div class="tx" data-tx="${t.id}"><span class="em" style="--c:var(${e.c})">${e.ic}</span><span class="n">${esc(t.note||e.name)}<small>${t.note?esc(e.name):''}${t.src==='bot'?(t.note?' · ':'')+'🤖 из чата':''}${t.by&&window.ACCESS&&t.by!==ACCESS.me&&t.byName?' · <span class="who">👤 '+esc(t.byName)+'</span>':''}</small></span><span class="s">${e.save?'+':'−'}${amt}</span></div>`;
+    h+=`<div class="tx" data-tx="${t.id}"><span class="em" style="--c:var(${e.c})">${e.ic}</span><span class="n">${esc(t.note||e.name)}<small>${t.note?esc(e.name):''}${t.src==='bot'?(t.note?' · ':'')+'🤖 из чата':''}${t.src==='import'?(t.note?' · ':'')+'📥 выписка':''}${t.by&&window.ACCESS&&t.by!==ACCESS.me&&t.byName?' · <span class="who">👤 '+esc(t.byName)+'</span>':''}</small></span><span class="s">${e.save?'+':'−'}${amt}</span></div>`;
     if(EDIT===t.id){
       const opts=S.cats.map(c=>`<option value="${c.id}"${c.id===t.env?' selected':''}>${c.ic} ${esc(c.name)}</option>`).join('');
       const co=Object.entries(CUR).map(([c,[s2]])=>`<option value="${c}"${c===(t.cur||S.cur)?' selected':''}>${s2} ${c}</option>`).join('');
@@ -1561,6 +1627,7 @@ function exitDemo(silent){
 
 /* ---------- подсказки «?» ---------- */
 const HELP={
+  imp:['📥 Выписка из банка','В приложении или на сайте банка найди выписку по карте и сохрани её в формате CSV (иногда пишут «Excel / CSV»). Потом выбери этот файл здесь.','Я возьму только списания, разнесу их по категориям по описанию и категории банка. Переводы людям по умолчанию не добавляю: это не всегда траты. Повторная загрузка того же файла дублей не создаст.'],
   team:['👫 Общий бюджет','Пригласи партнёра по ссылке, и вы будете вести один бюджет на двоих: общие конверты, цели и траты. Каждый пишет траты своему боту, всё сходится в одном месте. Видно, кто что записал.','В бюджете может быть 2 человека: ты и ещё один.'],
   chef:['👨‍🍳 ИИ-повар','Напиши, что хочешь есть: кухню, продукты, сколько времени готовить. ИИ составит меню на 7 дней и список покупок под твой бюджет на еду. Не нравится блюдо — жми 🔄 рядом с ним.','То же самое можно писать боту в чат: «меню на неделю, китайская кухня», «не люблю грибы», «замени ужин в среду».'],
   basket:['🧺 Стоимость корзины','Примерная цена всего списка покупок по средним ценам и сравнение с тем, что у тебя в конверте на еду на неделю.','После похода в магазин нажми «Закончил покупки» и впиши сумму чека. Трата запишется сама, а цены подстроятся под твой город.'],
