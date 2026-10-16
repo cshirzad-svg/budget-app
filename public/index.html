@@ -396,6 +396,38 @@ textarea{width:100%;box-sizing:border-box;font:500 15px var(--body);color:var(--
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield}
 @media (hover:hover){.btn:hover,.tabs button:hover,.gear:hover,.cal button:not(.fut):hover,.last-row:hover{filter:brightness(1.06)}.last-row:hover{background:var(--soft)}}
+
+/* ---- v6: повар, корзина, игра ---- */
+.qchips{display:flex;flex-wrap:wrap;gap:6px}
+.qchips button{font:600 13px var(--body);border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:99px;padding:7px 11px;cursor:pointer}
+.chef-load{display:flex;align-items:center;gap:10px;background:var(--accent-soft);border-radius:12px;padding:12px;font-size:14px}
+.chef-load .pan{font-size:26px;animation:h-wave 1s ease-in-out infinite}
+.chef-cur{display:flex;align-items:center;gap:8px;justify-content:space-between;background:var(--soft);border-radius:12px;padding:10px 12px;font-size:14px}
+.chef-cur button{border:0;background:none;color:var(--accent);font:600 13px var(--body);cursor:pointer;padding:0;flex:none}
+.pref-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
+.meal{grid-template-columns:76px 1fr auto!important;align-items:center}
+.swap{border:1px solid var(--line);background:var(--soft);border-radius:10px;width:34px;height:34px;cursor:pointer;font-size:15px}
+.swap.busy{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.shop label small{color:var(--muted);font-size:12px;white-space:nowrap}
+.basket{display:flex;flex-direction:column;gap:8px}
+.basket .bk-row{display:flex;justify-content:space-between;align-items:baseline;font-size:14px}
+.basket .bk-row b{white-space:nowrap;font-family:var(--display);font-weight:500;font-size:20px;font-variant-numeric:tabular-nums}
+.basket .bk-st{border-radius:12px;padding:10px 12px;font-size:14px}
+.basket .bk-st.ok{background:var(--good-soft);color:var(--good)}
+.basket .bk-st.bad{background:var(--bad-soft);color:var(--bad)}
+.game{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;cursor:pointer}
+.game .fire{font-size:34px;line-height:1}
+.game .fire.off{filter:grayscale(1);opacity:.5}
+.game b{font-family:var(--display);font-weight:500;font-size:18px}
+.game small{color:var(--muted);font-size:12px;display:block}
+.lvbar{height:8px;background:var(--soft);border-radius:99px;overflow:hidden;margin-top:6px}
+.lvbar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--good));border-radius:99px}
+.bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:52vh;overflow:auto}
+.bgrid div{background:var(--soft);border-radius:12px;padding:10px 6px;text-align:center;font-size:12px;line-height:1.3}
+.bgrid div i{display:block;font-style:normal;font-size:28px;margin-bottom:4px}
+.bgrid div b{display:block;font-size:12px}
+.bgrid div.lock{opacity:.4;filter:grayscale(1)}
 /* пустой старт */
 .kpi .chip:not(.good):not(.bad){background:var(--soft);color:var(--muted)}
 .kpi[data-help]{cursor:pointer}.qi{opacity:.5;font-size:11px}
@@ -443,6 +475,7 @@ input[type=number]{-moz-appearance:textfield}
     </div>
     <div class="empty-start" id="emptyStart" hidden><b>👋 Здесь пока пусто</b><p>Запиши первую трату: напиши боту <code>кофе 300</code> или открой вкладку «🧾 Траты». Через пару трат здесь появятся графики.</p></div>
     <div class="card today-card" id="todayCard"><small id="tdLbl"></small><div class="big" id="tdBig"></div><div class="td-bar" id="tdBarW"><i id="tdBar"></i></div><p class="hint" id="tdSub" style="margin:0"></p><div class="td-subs" id="tdSubs"></div></div>
+    <div class="card game" id="gameCard" role="button" tabindex="0"><span class="fire" id="gFire">🔥</span><div><b id="gStreak"></b><small id="gLevel"></small><div class="lvbar"><i id="gBar"></i></div></div></div>
     <div class="card" id="insCard"><h2>💡 Подсказки<button type="button" class="help" data-help="ins" aria-label="Что это?">?</button></h2><div class="ins" id="ins"></div></div>
     <div class="mascot only-env"><span class="face" id="face">😎</span><div><b id="moodT"></b><p id="moodP"></p></div></div>
     <div class="kpis only-env">
@@ -561,7 +594,23 @@ input[type=number]{-moz-appearance:textfield}
   <section class="panel" id="p-food" role="tabpanel" hidden>
     <div class="why">
       <div><b>💡 Как это экономит деньги:</b> вы заранее знаете, что готовить всю неделю, и идёте в магазин один раз по готовому списку. Без лишних покупок и без «нечего есть, закажем доставку».</div>
-      <div id="foodBudget"></div>
+    </div>
+    <div class="card" id="chefCard">
+      <h2>👨‍🍳 ИИ-повар<button type="button" class="help" data-help="chef" aria-label="Что это?">?</button></h2>
+      <p class="hint" style="margin:0">Скажи, что хочешь есть на неделе. Составлю меню и список покупок под твой бюджет.</p>
+      <div class="qchips" id="chefChips"><button type="button" data-q="китайская кухня">🇨🇳 Китайская</button><button type="button" data-q="больше рыбы и овощей">🐟 Рыба и овощи</button><button type="button" data-q="быстрые блюда до 30 минут">⚡ Быстро</button><button type="button" data-q="максимально дёшево">💸 Подешевле</button><button type="button" data-q="правильное питание, много белка">🥗 ПП</button><button type="button" data-q="без мяса">🌱 Без мяса</button></div>
+      <textarea id="chefIn" rows="2" maxlength="300" placeholder="Например: китайская кухня, без свинины, побольше овощей"></textarea>
+      <div class="pref-row"><span>🚫 Не использовать:</span><input type="text" id="prefIn" maxlength="200" placeholder="грибы, свинина…"></div>
+      <button type="button" class="btn" id="chefGo">✨ Составить меню</button>
+      <div id="chefState"></div>
+    </div>
+    <div class="card basket" id="basketCard">
+      <h2>🧺 Стоимость корзины<button type="button" class="help" data-help="basket" aria-label="Что это?">?</button></h2>
+      <div class="bk-row"><span>🛒 Список на неделю</span><b id="bkSum"></b></div>
+      <div class="bk-row" id="bkEnvRow"><span id="bkEnvL"></span><b id="bkEnv"></b></div>
+      <div class="bk-st" id="bkSt"></div>
+      <button type="button" class="btn ghost" id="bkDone">🧾 Закончил покупки: записать сумму чека</button>
+      <p class="hint" id="bkHint" style="margin:0"></p>
     </div>
     <div class="card">
       <h2>👨‍👩‍👧‍👦 Сколько вас в семье</h2>
@@ -605,7 +654,7 @@ input[type=number]{-moz-appearance:textfield}
     <div class="card">
       <h2>🤖 Как писать боту</h2>
       <div class="anim bc" data-anim="bot"></div>
-      <div class="cheat"><span><b>кофе 300</b> трата</span><span><b>вчера такси 500</b> на вчера</span><span><b>12.10 аптека 800</b> на дату</span><span><b>еда 50 ю</b> в юанях</span><span><b>10$ подписка</b> в долларах</span><span><b>отложил 5к</b> в копилку</span><span><b>итоги</b> отчёт за месяц</span><span><b>🎤 голосовое</b> «такси пятьсот»</span><span><b>напомни в 16:30 интернет 500</b> напоминание</span><span><b>напоминания</b> список</span><span><b>подписки</b> регулярные платежи</span><span><b>/undo</b> отменить последнее</span></div>
+      <div class="cheat"><span><b>кофе 300</b> трата</span><span><b>вчера такси 500</b> на вчера</span><span><b>12.10 аптека 800</b> на дату</span><span><b>еда 50 ю</b> в юанях</span><span><b>10$ подписка</b> в долларах</span><span><b>отложил 5к</b> в копилку</span><span><b>итоги</b> отчёт за месяц</span><span><b>🎤 голосовое</b> «такси пятьсот»</span><span><b>напомни в 16:30 интернет 500</b> напоминание</span><span><b>напоминания</b> список</span><span><b>подписки</b> регулярные платежи</span><span><b>📸 фото чека</b> запишу сам</span><span><b>меню на неделю, китайская кухня</b> ИИ-повар</span><span><b>не люблю грибы</b> учту в меню</span><span><b>на что я больше трачу?</b> вопрос ИИ</span><span><b>/undo</b> отменить последнее</span></div>
       <p class="hint">Категорию бот угадает по слову. Не угадал — предложит кнопки.</p>
     </div>
     <div class="card">
@@ -722,7 +771,7 @@ const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim
 const $=id=>document.getElementById(id);
 const num=id=>Math.max(0,parseFloat($(id).value)||0);
 const toast=t=>{const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),2000)};
-const TRANSIENT=new Set(['spent','prev','all','p']);
+const TRANSIENT=new Set(['spent','prev','all','p','srv']);
 function save(){if(S.demo)return;S.rates=RATES;S.tz=-new Date().getTimezoneOffset();const str=JSON.stringify(S,(k,v)=>TRANSIENT.has(k)?undefined:v);lsSet(SKEY,str);cloud.set(str);server.set(str)}
 
 /* ---------- периоды ---------- */
@@ -850,12 +899,12 @@ function render(){
    :['😎','Всё идёт по плану','Тратишь ровно в своём темпе. Так держать!'];
   const face=$('face');if(face.textContent!==mood[0]){face.textContent=mood[0];face.classList.remove('pop');void face.offsetWidth;face.classList.add('pop')}
   set('moodT',mood[1]);set('moodP',mood[2]);
-  const food=S.cats.find(c=>c.id==='food');$('foodBudget').innerHTML=food&&food.amt?`В конверте «${esc(food.name)}» на неделю: <b>${fmt(food.amt/4.345)}</b>`:'';
   renderSimple(P,txP,txPP);
   drawCharts(P,txP,plan,sc);
   renderHistory();renderTable();
   try{renderDaily(P,txP)}catch(e){console.error(e)}
   renderSubs();
+  try{renderGame()}catch(e){console.error(e)}
   renderTx(P,txP);
   save();
 }
@@ -1029,6 +1078,38 @@ $('sbSave').addEventListener('click',()=>{
 $('subsList').addEventListener('click',e=>{const b=e.target.closest('[data-sdel]');if(!b)return;
   if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='Удалить?';setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.textContent='🗑'}},2500);return}
   S.subs=S.subs.filter(x=>String(x.id)!==b.dataset.sdel);save();render()});
+
+/* ---------- серия, значки, уровни ---------- */
+const BADGES=[['first','✍️','Первый шаг','Первая запись'],['s3','🔥','Разогрев','3 дня подряд'],['s7','⚡','Неделя','7 дней подряд'],['s30','🌋','Железная привычка','30 дней подряд'],
+ ['tx50','📒','Летописец','50 записей'],['tx200','📚','Архивариус','200 записей'],['ns3','🧘','Дзен','3 дня без трат за месяц'],['save','🐷','Копилка','Первый раз отложил'],
+ ['save10','💰','Подушка','Отложено 10 000 ₽ всего'],['month','🏆','Уложился','Закрыл месяц в рамках плана'],['goal50','🎯','Полпути','Цель накоплена наполовину'],
+ ['chef','👨‍🍳','Шеф','Меню от ИИ-повара'],['receipt','🧾','Фотограф','Трата по фото чека'],['shop','🛒','Без лишнего','Закрыл список покупок']];
+const LEVELS=[[0,'Новичок'],[40,'Ученик'],[120,'Практик'],[300,'Профи'],[600,'Мастер бюджета']];
+function streakNow(){const days=new Set(S.tx.map(t=>t.date));((S.srv&&S.srv.ns)||[]).forEach(d=>days.add(d));
+  let d=new Date(NOW),n=0;if(!days.has(dstr(d)))d=addDays(d,-1);while(days.has(dstr(d))){n++;d=addDays(d,-1)}return n}
+function earned(){const st=streakNow(),n=S.tx.length,isS=t=>byId(t.env).save,fl=(S.srv&&S.srv.flags)||{};
+  const savedRub=S.tx.filter(isS).reduce((a,t)=>a+(conv(t.sum,S.cur,'RUB')||0),0);
+  const P=periodOf(0),days=new Set(S.tx.filter(t=>inP(t,P)&&!isS(t)).map(t=>t.date));let z=0;for(let i=0;i<P.elapsed-1;i++)if(!days.has(dstr(addDays(P.start,i))))z++;
+  const plan=spendCats().reduce((a,e)=>a+(e.amt||0),0);let mo=false;
+  if(plan&&S.mode!=='simple')for(let o=-1;o>=-6;o--){const Q=periodOf(o),l=S.tx.filter(t=>inP(t,Q)&&!isS(t));if(l.length>=5&&l.reduce((a,t)=>a+t.sum,0)<=plan){mo=true;break}}
+  const g50=saveCats().some(c=>c.target&&((c.before||0)+S.tx.filter(t=>t.env===c.id).reduce((a,t)=>a+t.sum,0))>=c.target/2);
+  const B={first:n>=1,s3:st>=3,s7:st>=7,s30:st>=30,tx50:n>=50,tx200:n>=200,ns3:z>=3&&n>=5,save:S.tx.some(isS),save10:savedRub>=10000,month:mo,goal50:g50,chef:!!fl.chef,receipt:!!fl.receipt,shop:!!S.shopDone};
+  return {st,ids:BADGES.filter(b=>B[b[0]]).map(b=>b[0])}}
+function renderGame(){
+  if(S.demo){$('gameCard').hidden=true;return}$('gameCard').hidden=false;
+  const {st,ids}=earned();S.badges=S.badges||{};
+  if(!S.badgesInit){ids.forEach(id=>{if(!S.badges[id])S.badges[id]=TODAYS});S.badgesInit=1;save()}
+  else{const fresh=ids.filter(id=>!S.badges[id]);if(fresh.length){fresh.forEach(id=>S.badges[id]=TODAYS);save();
+    const b=BADGES.find(x=>x[0]===fresh[0]);setTimeout(()=>{burst([b[1],'🏅','✨','🎉'],null,null,24);toast(`🏅 Новый значок: ${b[1]} «${b[2]}»`)},700)}}
+  const xp=S.tx.length+15*ids.length;let li=0;LEVELS.forEach((l,i)=>{if(xp>=l[0])li=i});
+  const nx=LEVELS[li+1];
+  $('gFire').className='fire'+(st?'':' off');
+  $('gStreak').textContent=st?`${st} ${st%10===1&&st%100!==11?'день':st%10>=2&&st%10<=4&&(st%100<12||st%100>14)?'дня':'дней'} подряд`:'Серия: начни сегодня';
+  $('gLevel').textContent=`Уровень ${li+1}: ${LEVELS[li][1]} · 🏅 ${ids.length} из ${BADGES.length}${nx?` · до «${nx[1]}» ${nx[0]-xp} XP`:''}`;
+  $('gBar').style.width=(nx?Math.min(100,(xp-LEVELS[li][0])/(nx[0]-LEVELS[li][0])*100):100)+'%';
+}
+$('gameCard').addEventListener('click',e=>{if(e.target.closest('.help'))return;const {st,ids}=earned();
+  sheet(`🏅 Значки: ${ids.length} из ${BADGES.length}`,`🔥 Серия: ${st} дн. Записывай траты каждый день или жми «Без трат» в вечернем сообщении бота.<div class="bgrid" style="margin-top:12px">${BADGES.map(b=>`<div class="${ids.includes(b[0])?'':'lock'}"><i>${b[1]}</i><b>${b[2]}</b>${b[3]}</div>`).join('')}</div>`)});
 function renderHistory(){
   const rows=[];
   for(let o=0;o>=-5;o--){const P=periodOf(o),t=S.tx.filter(x=>inP(x,P));
@@ -1216,22 +1297,82 @@ const SHOP={'🥩 Мясо и рыба':[[2,'кг','Куриные бёдра'],
  '🥛 Молочное и яйца':[[3,'л','Молоко'],[0.6,'кг','Творог'],[20,'шт.','Яйца'],[0.3,'кг','Сыр'],[0.4,'кг','Сметана']],
  '🍞 Прочее':[[4,'шт.','Хлеб'],[1,'шт.','Томатная паста'],[1,'л','Подсолнечное масло']]};
 let day=Math.min(6,(new Date().getDay()+6)%7);
+const PRICES={'Куриные бёдра':380,'Фарш':450,'Сосиски':250,'Филе минтая':450,'Гречка':90,'Рис':120,'Овсянка':100,'Манка':80,'Макароны':110,'Вермишель':100,'Мука':70,'Капуста':70,'Картофель':50,'Морковь':60,'Лук':50,'Свёкла':55,'Огурцы':200,'Яблоки':150,'Бананы':160,'Молоко':95,'Творог':600,'Яйца':11,'Сыр':900,'Сметана':400,'Хлеб':55,'Томатная паста':90,'Подсолнечное масло':160};
+function curMenu(){const m=S.srv&&S.srv.menuAI;
+  if(m&&m.days&&m.shop)return{ai:true,title:m.title,days:m.days,shop:m.shop,k:S.people/(m.p||S.people)};
+  return{ai:false,days:MENU,shop:Object.entries(SHOP).map(([c,it])=>[c,it.map(x=>[x[0],x[1],x[2],PRICES[x[2]]||0])]),k:S.people/4}}
+const qty=(q0,u,k)=>{let q=q0*k;return u==='шт.'||u==='уп.'?Math.max(1,Math.round(q)):Math.max(0.1,Math.round(q*10)/10)};
+const rubToCur=v=>conv(v*(S.priceK||1),'RUB',S.cur)||0;
+function basket(){const M=curMenu();let all=0,got=0;M.shop.forEach(([,it])=>it.forEach(([q0,u,n,pr])=>{const v=qty(q0,u,M.k)*pr;all+=v;if(S.checked[n])got+=v}));return{all:rubToCur(all),got:rubToCur(got)}}
 function renderFood(){
+  const M=curMenu();
+  if(M.ai&&S.menuAt!==S.srv.menuAI.at){S.menuAt=S.srv.menuAI.at;S.checked={};save()}
   $('people').textContent=S.people;
-  $('days').innerHTML=MENU.map((d,i)=>`<button type="button" aria-pressed="${i===day}" data-day="${i}">${d[0]}</button>`).join('');
-  const d=MENU[day];
-  $('meals').innerHTML=[['🍳 Завтрак',d[1]],['🍲 Обед',d[2]],['🍝 Ужин',d[3]]].map(m=>`<div class="meal"><span>${m[0]}</span><div>${m[1]}</div></div>`).join('');
-  const k=S.people/4; let all=0, done=0;
-  $('shop').innerHTML=Object.entries(SHOP).map(([c,items])=>`<div class="cat">${c}</div>`+items.map(([qq0,u,n])=>{
+  $('days').innerHTML=M.days.map((d,i)=>`<button type="button" aria-pressed="${i===day}" data-day="${i}">${d[0]}</button>`).join('');
+  const d=M.days[day];
+  $('meals').innerHTML=[['🍳 Завтрак',d[1]],['🍲 Обед',d[2]],['🍝 Ужин',d[3]]].map((m,i)=>`<div class="meal"><span>${m[0]}</span><div>${esc(m[1])}</div><button type="button" class="swap" data-swap="${i}" aria-label="Заменить блюдо" title="Заменить блюдо">🔄</button></div>`).join('');
+  let all=0, done=0;
+  $('shop').innerHTML=M.shop.map(([c,items])=>`<div class="cat">${esc(c)}</div>`+items.map(([q0,u,n,pr])=>{
     all++; if(S.checked[n])done++;
-    let qq=qq0*k; qq=u==='шт.'?Math.max(1,Math.round(qq)):Math.round(qq*10)/10;
-    return `<label><input type="checkbox" data-item="${n}" ${S.checked[n]?'checked':''}><span>${n} — ${String(qq).replace('.',',')} ${u}</span></label>`}).join('')).join('');
+    const qq=qty(q0,u,M.k), cost=pr?rubToCur(qq*pr):0;
+    return `<label><input type="checkbox" data-item="${esc(n)}" ${S.checked[n]?'checked':''}><span>${esc(n)} — ${String(qq).replace('.',',')} ${u}${cost?` <small>~${fmt(cost)}</small>`:''}</span></label>`}).join('')).join('');
   $('shopProg').textContent=done===all?`🎉 Всё куплено! ${done} из ${all}`:`🛒 Куплено ${done} из ${all}`;
-  $('shopBar').style.width=(done/all*100)+'%';
+  $('shopBar').style.width=(all?done/all*100:0)+'%';
+  /* повар */
+  if(document.activeElement!==$('prefIn'))$('prefIn').value=((S.srv&&S.srv.prefs)||[]).join(', ');
+  if(!CHEF_BUSY)$('chefState').innerHTML=M.ai?`<div class="chef-cur"><span>📖 Сейчас: <b>${esc(M.title)}</b></span><button type="button" id="chefReset">↩️ Обычное меню</button></div>`:'';
+  /* корзина */
+  const bk=basket(), food=S.cats.find(c=>c.id==='food')||S.cats.find(c=>/прод|еда/i.test(c.name)), wk=food&&food.amt?food.amt/4.345:0;
+  $('bkSum').textContent='≈ '+fmt(bk.all);
+  $('bkEnvRow').hidden=!wk; if(food){$('bkEnvL').textContent=`✉️ В конверте «${food.name}» на неделю`;$('bkEnv').textContent=fmt(wk)}
+  const st=$('bkSt');
+  if(wk){st.hidden=false;st.className='bk-st '+(bk.all<=wk?'ok':'bad');st.textContent=bk.all<=wk?`✅ Влезает! Останется ~${fmt(wk-bk.all)}`:`❗ Не хватает ~${fmt(bk.all-wk)}. Попроси ИИ-повара «подешевле» или убери лишнее.`}
+  else{st.hidden=false;st.className='bk-st';st.textContent=S.mode==='simple'?'В режиме «Просто учёт» плана нет, показываю только стоимость.':'Задай сумму в конверте «Еда», и я покажу, влезает ли корзина.'}
+  $('bkHint').textContent=S.priceK&&S.priceK!==1?`Цены подстроены под твой город: ${S.priceK>1?'+':''}${Math.round((S.priceK-1)*100)}% к средним.`:'Цены примерные, средние по России. После первого похода в магазин впиши сумму чека, и я подстрою их под твой город.';
 }
+let CHEF_BUSY=false;
+function aiCall(body){if(!useServer)return Promise.resolve({ok:false,error:'nosrv'});
+  return fetch('/api/ai',{method:'POST',headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(()=>({ok:false,error:'net'}))}
+const AIERR={limit:'😴 На сегодня лимит запросов к ИИ закончился. Завтра продолжим!',nosrv:'ИИ-повар работает внутри Telegram',no_ai:'ИИ-повар пока недоступен',ai:'😕 ИИ не справился, попробуй ещё раз или сформулируй иначе',net:'😕 Нет связи, попробуй ещё раз'};
+function savePrefs(){const prefs=$('prefIn').value.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
+  const old=((S.srv&&S.srv.prefs)||[]).join(',');if(prefs.join(',')===old)return Promise.resolve();
+  S.srv={...(S.srv||{}),prefs};return aiCall({act:'prefs',prefs})}
+$('prefIn').addEventListener('change',()=>{savePrefs().then(()=>toast('👌 Запомнил'))});
+function runChef(prompt){
+  if(CHEF_BUSY)return;if(S.demo){toast('В примере ИИ-повар не работает 🙂');return}
+  CHEF_BUSY=true;$('chefGo').disabled=true;
+  $('chefState').innerHTML='<div class="chef-load"><span class="pan">🍳</span><span>Составляю меню и список покупок… Это займёт секунд 20.</span></div>';
+  savePrefs().then(()=>aiCall({act:'menu',prompt})).then(r=>{
+    CHEF_BUSY=false;$('chefGo').disabled=false;
+    if(!r||!r.ok){$('chefState').innerHTML='';toast(AIERR[r&&r.error]||AIERR.ai);renderFood();return}
+    S.srv=r.srv;day=0;renderFood();burst(['🍳','🥕','🥘','✨']);toast('👨‍🍳 Меню готово! Список покупок обновлён');
+    $('days').scrollIntoView({behavior:'smooth',block:'center'})})}
+$('chefGo').addEventListener('click',()=>{const t=$('chefIn').value.trim();runChef(t||'обычное сытное и недорогое меню')});
+$('chefChips').addEventListener('click',e=>{const b=e.target.closest('[data-q]');if(!b)return;$('chefIn').value=b.dataset.q;runChef(b.dataset.q)});
+$('chefState').addEventListener('click',e=>{if(!e.target.closest('#chefReset'))return;S.srv={...S.srv,menuAI:null};S.checked={};renderFood();aiCall({act:'clear'});toast('↩️ Вернул обычное меню')});
+$('meals').addEventListener('click',e=>{const b=e.target.closest('[data-swap]');if(!b)return;
+  if(!curMenu().ai){toast('Сначала составь меню с ИИ-поваром 👨‍🍳 выше');$('chefCard').scrollIntoView({behavior:'smooth'});return}
+  if(b.classList.contains('busy'))return;b.classList.add('busy');
+  aiCall({act:'swap',day,meal:+b.dataset.swap}).then(r=>{b.classList.remove('busy');
+    if(!r||!r.ok){toast(AIERR[r&&r.error]||AIERR.ai);return}
+    S.srv=r.srv;renderFood();toast('🔄 Заменил! Новые продукты добавлены в список')})});
+$('bkDone').addEventListener('click',()=>{
+  const bk=basket(),est=bk.got||bk.all,food=S.cats.find(c=>c.id==='food')||S.cats.find(c=>/прод|еда/i.test(c.name))||spendCats()[0];
+  const bg=document.createElement('div');bg.className='sheet-bg';
+  bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><h3>🧾 Сколько вышло по чеку?</h3><p>Запишу трату в «${esc(food.name)}» и подстрою цены под твой город. По моей оценке ${bk.got?'отмеченное':'весь список'} стоит ~${fmt(est)}.</p>
+  <input type="number" id="bkIn" inputmode="decimal" placeholder="Сумма чека, ${sym(S.cur)}"><button type="button" class="btn" data-b="ok">Записать</button><button type="button" class="btn ghost" data-b="no">Отмена</button></div>`;
+  document.body.appendChild(bg);setTimeout(()=>bg.querySelector('#bkIn').focus(),100);
+  bg.addEventListener('click',e=>{const b=e.target.closest('[data-b]');if(e.target!==bg&&!b)return;
+    if(b&&b.dataset.b==='ok'){const v=parseFloat(bg.querySelector('#bkIn').value);if(!(v>0)){toast('Впиши сумму');return}
+      const t=mkTx(v,S.cur,food.id,TODAYS,'Продукты по списку');if(t)S.tx.push(t);
+      if(est>0){const nk=Math.min(3,Math.max(.3,(S.priceK||1)*v/est));S.priceK=Math.round(nk*100)/100}
+      S.checked={};S.badges=S.badges||{};render();save();renderFood();
+      burst(['🛒','🧾','✨']);toast(`🧾 Записал ${fmt(v)}. Цены подстроены: ${S.priceK>1?'+':''}${Math.round((S.priceK-1)*100)}% к средним`)}
+    bg.remove()})});
 $('days').addEventListener('click',e=>{if(e.target.dataset.day){day=+e.target.dataset.day;renderFood()}});
-$('shop').addEventListener('change',e=>{const id=e.target.dataset.item;if(!id)return;S.checked[id]=e.target.checked;renderFood();save();if(e.target.checked){const all=document.querySelectorAll('#shop input').length,done=document.querySelectorAll('#shop input:checked').length;if(done===all){burst(['🎉','🛒','✨','🥳']);toast('🥳 Список закрыт! Ни одной лишней покупки')}}});
+$('shop').addEventListener('change',e=>{const id=e.target.dataset.item;if(!id)return;S.checked[id]=e.target.checked;renderFood();save();if(e.target.checked){const all=document.querySelectorAll('#shop input').length,done=document.querySelectorAll('#shop input:checked').length;if(done===all){burst(['🎉','🛒','✨','🥳']);toast('🥳 Список закрыт! Ни одной лишней покупки');S.shopDone=1;save()}}});
 $('pMinus').addEventListener('click',()=>{if(S.people>1){S.people--;renderFood();save()}});
+if(location.hash==='#food'&&S.mode!=='simple')setTimeout(()=>selectTab('t-food'),50);
 $('pPlus').addEventListener('click',()=>{if(S.people<8){S.people++;renderFood();save()}});
 
 /* ---------- мастер старта ---------- */
@@ -1325,6 +1466,9 @@ function exitDemo(silent){
 
 /* ---------- подсказки «?» ---------- */
 const HELP={
+  chef:['👨‍🍳 ИИ-повар','Напиши, что хочешь есть: кухню, продукты, сколько времени готовить. ИИ составит меню на 7 дней и список покупок под твой бюджет на еду. Не нравится блюдо — жми 🔄 рядом с ним.','То же самое можно писать боту в чат: «меню на неделю, китайская кухня», «не люблю грибы», «замени ужин в среду».'],
+  basket:['🧺 Стоимость корзины','Примерная цена всего списка покупок по средним ценам и сравнение с тем, что у тебя в конверте на еду на неделю.','После похода в магазин нажми «Закончил покупки» и впиши сумму чека. Трата запишется сама, а цены подстроятся под твой город.'],
+  game:['🔥 Серия и значки','Серия — сколько дней подряд ты записываешь траты (или отмечаешь «день без трат» в боте). За привычки и достижения открываются значки, а за записи и значки растёт уровень.'],
   ins:['💡 Подсказки','Я смотрю на твои траты и замечаю главное: где тратишь больше, чем в прошлом месяце, на что уходит больше всего, сколько было дней без трат.','Подсказки обновляются с каждой новой тратой.'],
   cal:['🗓 Календарь трат','Каждый квадрат — день месяца. Чем ярче цвет, тем больше ты в этот день потратил. 🧘 — день без трат. Нажми на день, чтобы увидеть, что там было.'],
   subs:['🔁 Регулярные платежи','Платежи, которые повторяются каждый месяц: интернет, аренда, связь, подписки. В нужный день бот пришлёт напоминание с кнопкой «Оплатил», и трата запишется сама.','Ещё боту можно написать «подписки», и он покажет список и сумму в месяц.'],
@@ -1359,6 +1503,7 @@ document.addEventListener('click',e=>{const h=e.target.closest('[data-help]');if
 const TOUR=[
   ['.modes','Два режима','💌 Конверты — делишь доход и следишь за остатками. 🧾 Просто учёт — только записываешь траты. Переключай, когда хочешь.'],
   ['#t-over','📊 Обзор','Главное за месяц: сколько потрачено, сколько можно в день, куда уходят деньги.'],
+  ['#gameCard','🔥 Серия и значки','Записывай траты каждый день: растёт серия, открываются значки и уровни. Нажми, чтобы посмотреть все.'],
   ['#todayCard','☀️ Можно сегодня','Главная цифра дня: сколько ещё можно потратить сегодня, чтобы уложиться в месяц.'],
   ['#t-env','✉️ Конверты','Твои конверты или категории: суммы, копилки, цели. Тут же можно добавить свою категорию.'],
   ['#t-tx','🧾 Траты','Добавляй траты вручную. Нажми на любую — исправишь или удалишь.'],
@@ -1385,6 +1530,8 @@ const TOURS={main:TOUR,
   ['#txList','✏️ Исправить или удалить','Нажми на любую трату, чтобы поменять сумму, категорию или дату.'],
   [null,'🤖 Быстрее через бота','Открывать приложение не обязательно. Просто пиши боту в чат, как другу:','bot']],
  food:[
+  ['#chefCard','👨‍🍳 ИИ-повар','Напиши, что хочешь есть на неделе, или нажми подсказку. ИИ составит меню и список покупок под твой бюджет.'],
+  ['#basketCard','🧺 Сколько стоит корзина','Примерная цена списка и влезает ли она в конверт «Еда». После магазина впиши сумму чека.'],
   ['#days','🍳 Меню на неделю','Готовое меню на 7 дней: завтрак, обед, ужин. Листай дни.'],
   ['#p-food .stepper','👨‍👩‍👧‍👦 Сколько вас','Поставь число людей, и список покупок пересчитается.'],
   ['#shop','🛒 Список покупок','Всё для этого меню. Отмечай галочкой прямо в магазине, и ничего лишнего не купишь.']]
@@ -1542,7 +1689,7 @@ if(useServer)fetch('/api/rates').then(r=>r.json()).then(j=>{if(j&&j.ok&&j.rates)
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{applyTheme()});
 try{if(inTG)tg.onEvent('themeChanged',applyTheme)}catch(e){}
 new MutationObserver(()=>{Object.values(charts).forEach(c=>c.destroy());charts={};render()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-function pullServer(){if(!useServer||S.demo)return;api('GET').then(r=>{if(!r||!r.state||!r.state.tx)return;const have=new Set(S.tx.map(t=>t.id));
+function pullServer(){if(!useServer||S.demo)return;api('GET').then(r=>{if(!r||!r.state||!r.state.tx)return;if(r.state.srv){S.srv=r.state.srv;try{renderFood();renderGame()}catch(e){}}const have=new Set(S.tx.map(t=>t.id));
   const add=r.state.tx.filter(t=>!have.has(t.id)&&!deletedIds.includes(t.id)).map(t=>({...t,date:t.date||`${t.m}-${pad(t.day||1)}`}));
   if(add.length){S.tx.push(...add);render();toast(`🤖 Из чата добавлено трат: ${add.length}`)}}).catch(()=>{})}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pullServer()});

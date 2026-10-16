@@ -55,9 +55,32 @@ export class UserStore extends DurableObject {
     const ids = new Set((incoming.tx || []).map((t) => t.id));
     // траты, добавленные ботом, пока приложение было открыто, не теряем
     const extra = (cur.tx || []).filter((t) => !ids.has(t.id) && !del.has(t.id));
-    const state = { ...incoming, tx: [...(incoming.tx || []), ...extra] };
+    const state = { ...incoming, srv: cur.srv || {}, tx: [...(incoming.tx || []), ...extra] };
     await this.ctx.storage.put('state', state);
     return state;
+  }
+  async srvGet() { const s = (await this.ctx.storage.get('state')) || {}; return s.srv || {}; }
+  async srvPatch(patch) {
+    const s = (await this.ctx.storage.get('state')) || {};
+    s.srv = { ...(s.srv || {}), ...patch };
+    await this.ctx.storage.put('state', s);
+    return s.srv;
+  }
+  async aiTick(day, max) {
+    const s = (await this.ctx.storage.get('state')) || {};
+    const a = (s.srv && s.srv.ai) || {};
+    const n = a.d === day ? a.n || 0 : 0;
+    if (n >= max) return false;
+    s.srv = { ...(s.srv || {}), ai: { d: day, n: n + 1 } };
+    await this.ctx.storage.put('state', s);
+    return true;
+  }
+  async seenUpd(id) {
+    const list = (await this.ctx.storage.get('upd')) || [];
+    if (list.includes(id)) return true;
+    list.push(id); while (list.length > 40) list.shift();
+    await this.ctx.storage.put('upd', list);
+    return false;
   }
   async addTx(tx) {
     const s = (await this.ctx.storage.get('state')) || {};
@@ -359,7 +382,10 @@ export function eveningText(state) {
   const main = state.cur || 'RUB', today = todayStr(state);
   const isSave = (t) => catInfo(t.env, state).save;
   const list = (state.tx || []).filter((t) => txDate(t) === today && !isSave(t));
-  if (!list.length) return { text: '🌙 Сегодня ни одной записи. День без трат или забыл записать?', empty: true };
+  if (!list.length) {
+    const st = streakOf(state);
+    return { text: st >= 2 ? `🌙 Сегодня ни одной записи. 🔥 Серия ${st} дн. под угрозой! День без трат или забыл записать?` : '🌙 Сегодня ни одной записи. День без трат или забыл записать?', empty: true };
+  }
   const by = {};
   list.forEach((t) => { by[t.env] = (by[t.env] || 0) + t.sum; });
   const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, v]) => { const c = catInfo(id, state); return `${c.ic} ${c.name} — ${fmt(v, main)}`; });
@@ -621,6 +647,136 @@ export function catsText(state) {
   return `✉️ <b>Категории за ${P.label}</b>\n\n` + rows.join('\n');
 }
 
+/* ---------- ИИ: повар, советник, чек ---------- */
+const LLM = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+const VISION = '@cf/meta/llama-3.2-11b-vision-instruct';
+const AI_MAX = 15;
+async function aiText(env, messages, max = 1400) {
+  const r = await env.AI.run(LLM, { messages, max_tokens: max, temperature: 0.6 });
+  const v = r && r.response;
+  return typeof v === 'string' ? v : v ? JSON.stringify(v) : '';
+}
+export function pickJSON(t) {
+  if (!t) return null;
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  const raw = t.slice(a, b + 1);
+  try { return JSON.parse(raw); } catch (e) { /* ниже чиним */ }
+  try { return JSON.parse(raw.replace(/,\s*([}\]])/g, '$1').replace(/[“”]/g, '"')); } catch (e) { return null; }
+}
+const DAYS7 = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const MEALS = ['завтрак', 'обед', 'ужин'];
+export function cleanMenu(j, people) {
+  if (!j || !Array.isArray(j.days) || !Array.isArray(j.shop)) return null;
+  const days = DAYS7.map((d, i) => { const x = j.days[i] || []; const arr = Array.isArray(x) ? x : [x.d, x.b, x.l, x.dn]; return [d, ...[1, 2, 3].map((k) => String(arr[k] || '—').slice(0, 80))]; });
+  const shop = [];
+  for (const g of j.shop.slice(0, 10)) {
+    const name = String((Array.isArray(g) ? g[0] : g.c) || '🧺 Продукты').slice(0, 30);
+    const items = ((Array.isArray(g) ? g[1] : g.i) || []).slice(0, 25).map((it) => {
+      const [n, q, u, pr] = Array.isArray(it) ? it : [it.n, it.q, it.u, it.p];
+      return [Math.max(0.05, +q || 1), String(u || 'шт.').slice(0, 6), String(n || '').slice(0, 40), Math.max(0, +pr || 0)];
+    }).filter((x) => x[2]);
+    if (items.length) shop.push([name, items]);
+  }
+  if (!shop.length) return null;
+  return { title: String(j.title || 'Твоё меню').slice(0, 60), days, shop, p: people, at: Date.now() };
+}
+const basketRub = (m) => m.shop.reduce((a, [, items]) => a + items.reduce((b, [q, , , pr]) => b + q * pr, 0), 0);
+export async function makeMenu(env, state, request) {
+  const srv = state.srv || {};
+  const people = state.people || 2;
+  const food = getCats(state).find((c) => c.id === 'food' || /прод|еда/i.test(c.name));
+  const rates = await getRates();
+  const weekBudget = food && food.amt ? conv(food.amt / 4.345, state.cur || 'RUB', 'RUB', rates) : null;
+  const prefs = (srv.prefs || []).join(', ');
+  const sys = 'Ты повар-экономист. Составляешь простое домашнее меню на 7 дней (завтрак, обед, ужин) и список покупок на всю неделю. ' +
+    'Используй остатки: суп или основное блюдо можно есть 2 дня подряд, пиши «(вчерашний)». Блюда реальные, понятные, по-русски. ' +
+    'Количества — на всю неделю для указанного числа людей. Единицы: кг, л, шт., уп. Цена — примерная средняя цена в рублях за 1 единицу в обычном российском супермаркете в 2026 году. ' +
+    'Отвечай ТОЛЬКО JSON без пояснений, строго в формате: ' +
+    '{"title":"короткое название недели","days":[["Пн","завтрак","обед","ужин"], ... 7 строк],"shop":[["🥩 Мясо и рыба",[["Куриное филе",1.5,"кг",420]]],["🌾 Крупы",[...]],["🥕 Овощи и фрукты",[...]],["🥛 Молочное и яйца",[...]],["🍞 Прочее",[...]]]}';
+  const user = `Людей: ${people}. ${weekBudget ? `Бюджет на продукты на неделю: около ${Math.round(weekBudget)} рублей, постарайся уложиться. ` : ''}${prefs ? `Не использовать / учесть: ${prefs}. ` : ''}Пожелания: ${request || 'обычное сытное и недорогое меню'}.`;
+  const out = await aiText(env, [{ role: 'system', content: sys }, { role: 'user', content: user }], 1600);
+  const m = cleanMenu(pickJSON(out), people);
+  if (m) m.q = request || '';
+  return m;
+}
+export async function swapMeal(env, state, di, mi, wish) {
+  const m = state.srv && state.srv.menuAI;
+  if (!m) return null;
+  const cur = m.days[di][mi + 1];
+  const sys = 'Ты повар-экономист. Предложи ОДНО другое простое домашнее блюдо на замену. Отвечай ТОЛЬКО JSON: {"n":"название блюда","add":[["продукт",количество,"кг|л|шт.|уп.",цена_руб_за_единицу]]} — в add только продукты, которых нужно докупить, количества на ' + (m.p || 2) + ' чел.';
+  const prefs = ((state.srv || {}).prefs || []).join(', ');
+  const out = await aiText(env, [{ role: 'system', content: sys }, { role: 'user', content: `Заменить «${cur}» (${MEALS[mi]}, ${DAYS7[di]}). Меню недели: ${m.days.map((d) => d.slice(1).join(', ')).join('; ')}. ${prefs ? 'Не использовать: ' + prefs + '. ' : ''}${wish ? 'Пожелание: ' + wish : ''}` }], 400);
+  const j = pickJSON(out);
+  if (!j || !j.n) return null;
+  m.days[di][mi + 1] = String(j.n).slice(0, 80);
+  const add = (Array.isArray(j.add) ? j.add : []).slice(0, 8).map((it) => [Math.max(0.05, +it[1] || 1), String(it[2] || 'шт.').slice(0, 6), String(it[0] || '').slice(0, 40), Math.max(0, +it[3] || 0)]).filter((x) => x[2]);
+  if (add.length) {
+    let g = m.shop.find((x) => x[0] === '➕ Для замен');
+    if (!g) { g = ['➕ Для замен', []]; m.shop.push(g); }
+    g[1].push(...add);
+  }
+  m.at = Date.now();
+  return m;
+}
+export function menuSummary(m, state, rates) {
+  const main = state.cur || 'RUB', k = state.priceK || 1;
+  const sum = conv(basketRub(m) * k * ((state.people || m.p) / (m.p || 1)), 'RUB', main, rates);
+  const food = getCats(state).find((c) => c.id === 'food' || /прод|еда/i.test(c.name));
+  const wk = food && food.amt ? food.amt / 4.345 : null;
+  let out = `👨‍🍳 <b>${m.title}</b>\n\n` + m.days.map((d) => `<b>${d[0]}</b>: ${d[1]} · ${d[2]} · ${d[3]}`).join('\n');
+  if (sum != null) out += `\n\n🛒 Корзина на неделю ≈ <b>${fmt(sum, main)}</b>`;
+  if (sum != null && wk) out += wk >= sum ? `\n✅ Влезает в конверт «${food.name}» (${fmt(wk, main)} в неделю)` : `\n❗ Больше конверта «${food.name}» на ${fmt(sum - wk, main)}. Напиши «подешевле», и я переделаю`;
+  return out + '\n\nСписок покупок — в приложении, вкладка «Еда». Заменить блюдо: «замени ужин в среду».';
+}
+export function foodIntent(t) {
+  const x = t.toLowerCase().replace(/ё/g, 'е');
+  if (/^(я\s+)?(не люблю|не ем|не ешь|аллергия на|исключи)\s+\S/.test(x)) return 'pref';
+  if (/^(мои )?предпочтения$|^сбрось предпочтения$|^забудь предпочтения$/.test(x)) return 'prefs';
+  if (/^замени\s/.test(x) && /(завтрак|обед|ужин)/.test(x)) return 'swap';
+  if (/^подешевле$|^дешевле$/.test(x)) return 'menu';
+  if (/\d/.test(x) && !/меню|рацион/.test(x)) return null;
+  if (/(^|\s)(меню|рацион)(\s|$)|кухн[яюие]|что (приготовить|поесть|покушать)|^хочу (на неделю|поесть|есть)|на неделю (хочу|поесть)|^(придумай|составь|подбери|предложи) (еду|блюда|меню|рацион)/.test(x)) return 'menu';
+  return null;
+}
+export function isQuestion(t) {
+  const x = t.toLowerCase();
+  return t.length >= 8 && !/\d/.test(t) && (/\?$/.test(t.trim()) || /^(как|почему|зачем|что|сколько|на что|где|куда|посоветуй|подскажи|объясни|стоит ли|можно ли|помоги)\s/.test(x));
+}
+export async function advise(env, state, question) {
+  const main = state.cur || 'RUB', P = period(state);
+  const list = (state.tx || []).filter((t) => inPeriod(t, P));
+  const by = {};
+  list.forEach((t) => { const c = catInfo(t.env, state); by[c.name] = (by[c.name] || 0) + t.sum; });
+  const plan = getCats(state).filter((c) => !c.save && c.amt).map((c) => `${c.name}: план ${Math.round(c.amt)}`).join('; ');
+  const ctx = `Валюта: ${main}. Месяц: ${P.label}, прошло ${P.elapsed} из ${P.days} дней. Траты по категориям: ${Object.entries(by).map(([k, v]) => `${k} ${Math.round(v)}`).join(', ') || 'нет'}. ${plan ? 'Планы: ' + plan + '.' : ''} Доход: ${state.income || 'не указан'}.`;
+  const sys = 'Ты дружелюбный помощник по личным финансам внутри бота «Бюджет в конвертах». Отвечай по-русски, коротко (до 6 предложений), конкретно и по цифрам пользователя. Без markdown, можно эмодзи. Не давай инвестиционных советов про конкретные акции или крипту.';
+  return (await aiText(env, [{ role: 'system', content: sys }, { role: 'user', content: ctx + '\n\nВопрос: ' + question }], 500)).trim();
+}
+async function fileBytes(env, fileId) {
+  const f = await tg(env, 'getFile', { file_id: fileId });
+  if (!f.ok) return null;
+  return new Uint8Array(await (await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${f.result.file_path}`)).arrayBuffer());
+}
+export async function readReceipt(env, bytes) {
+  const prompt = 'Это фото кассового чека. Найди ИТОГОВУЮ сумму покупки. Ответь ТОЛЬКО JSON: {"total":число,"cur":"RUB|CNY|USD|EUR|KZT|GEL|THB|TRY|AED","store":"название магазина или пусто","date":"YYYY-MM-DD или null","kind":"продукты|кафе|аптека|одежда|транспорт|быт|другое"}. Если это не чек — {"total":null}.';
+  const run = () => env.AI.run(VISION, { messages: [{ role: 'user', content: prompt }], image: [...bytes], max_tokens: 200 });
+  let r;
+  try { r = await run(); } catch (e) {
+    if (/agree/i.test(String(e && e.message))) { await env.AI.run(VISION, { prompt: 'agree' }); r = await run(); } else throw e;
+  }
+  const v = r && (r.response || r.description);
+  return pickJSON(typeof v === 'string' ? v : JSON.stringify(v || ''));
+}
+export function streakOf(state) {
+  const days = new Set((state.tx || []).map(txDate));
+  ((state.srv || {}).ns || []).forEach((d) => days.add(d));
+  let d = todayUTC(state), n = 0;
+  if (!days.has(ymd(new Date(d)))) d -= 864e5;
+  while (days.has(ymd(new Date(d)))) { n++; d -= 864e5; }
+  return n;
+}
+
 async function transcribe(env, fileId) {
   if (!env.AI) return null;
   try {
@@ -640,9 +796,23 @@ async function transcribe(env, fileId) {
   } catch (e) { console.error('voice', e); return null; }
 }
 
+async function foodMenu(env, st, state, chat, request, origin) {
+  if (!env.AI) { await tg(env, 'sendMessage', { chat_id: chat, text: 'ИИ-повар пока недоступен.' }); return; }
+  if (!(await st.aiTick(todayStr(state), AI_MAX))) { await tg(env, 'sendMessage', { chat_id: chat, text: '😴 На сегодня лимит запросов к ИИ закончился. Завтра продолжим!' }); return; }
+  await tg(env, 'sendMessage', { chat_id: chat, text: '👨‍🍳 Составляю меню и список покупок… Это займёт секунд 20.' });
+  let m = null;
+  try { m = await makeMenu(env, state, request); } catch (e) { console.error('menu', e); }
+  if (!m) { await tg(env, 'sendMessage', { chat_id: chat, text: '😕 Не получилось составить меню. Попробуй ещё раз или сформулируй иначе.' }); return; }
+  const flags = { ...((state.srv || {}).flags || {}), chef: 1 };
+  await st.srvPatch({ menuAI: m, flags });
+  await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: menuSummary(m, { ...state, srv: { ...(state.srv || {}), menuAI: m } }, await getRates()),
+    reply_markup: { inline_keyboard: [[{ text: '📖 Открыть меню и список', web_app: { url: origin + '/#food' } }], [{ text: '🔄 Другое меню', callback_data: 'm:again' }, { text: '💸 Подешевле', callback_data: 'm:cheap' }]] } });
+}
+
 async function onUpdate(update, env, origin) {
   if (update.callback_query && update.callback_query.data === 'ns') {
     const q = update.callback_query;
+    try { const st0 = store(env, q.from.id), s0 = (await st0.getState()) || {}; const ns = new Set(((s0.srv || {}).ns || [])); ns.add(todayStr(s0)); await st0.srvPatch({ ns: [...ns].slice(-120) }); } catch (e) { console.error('ns', e); }
     await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Засчитано 🧘' });
     await tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text: '🧘 День без трат! Так держать 💪', reply_markup: appButton(origin) });
     return;
@@ -684,6 +854,13 @@ async function onUpdate(update, env, origin) {
     await edit('🔁 ' + summary(s2, envId, tx));
     return;
   }
+  if (update.callback_query && /^m:/.test(update.callback_query.data || '')) {
+    const q = update.callback_query, st = store(env, q.from.id), state = (await st.getState()) || {};
+    await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: '👨‍🍳 Готовлю…' });
+    const last = (state.srv && state.srv.menuAI && state.srv.menuAI.q) || '';
+    await foodMenu(env, st, state, q.from.id, q.data === 'm:cheap' ? (last + ', подешевле, бюджетные продукты').replace(/^, /, '') : last, origin);
+    return;
+  }
   if (update.callback_query && /^rd:/.test(update.callback_query.data || '')) {
     const q = update.callback_query, st = store(env, q.from.id);
     const next = await st.remDel(+q.data.slice(3));
@@ -721,7 +898,29 @@ async function onUpdate(update, env, origin) {
   if (!msg || msg.chat.type !== 'private') return;
   const uid = msg.from.id, chat = msg.chat.id;
   const st = store(env, uid);
-  let text = (msg.text || '').trim();
+  if (update.update_id && (await st.seenUpd(update.update_id))) return;
+  let text = (msg.text || msg.caption || '').trim();
+  if (msg.photo && !/\d/.test(text)) {
+    const state = (await st.getState()) || {};
+    if (!env.AI) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Фото чеков пока не понимаю. Напиши сумму текстом: «продукты 1500».' }); return; }
+    if (!(await st.aiTick(todayStr(state), AI_MAX))) { await tg(env, 'sendMessage', { chat_id: chat, text: '😴 На сегодня лимит запросов к ИИ закончился. Напиши сумму текстом: «продукты 1500».' }); return; }
+    await tg(env, 'sendMessage', { chat_id: chat, text: '🧾 Читаю чек…' });
+    let j = null;
+    try { const ph = msg.photo[msg.photo.length - 1]; const b = await fileBytes(env, ph.file_id); if (b) j = await readReceipt(env, b); } catch (e) { console.error('receipt', e); }
+    const total = j && +String(j.total).replace(',', '.').replace(/[^\d.]/g, '');
+    if (!total || total <= 0) { await tg(env, 'sendMessage', { chat_id: chat, text: '😕 Не смог прочитать сумму. Сфоткай чек ровнее, при хорошем свете, или напиши: «продукты 1500».' }); return; }
+    const cur = CURS[String(j.cur || '').toUpperCase()] ? String(j.cur).toUpperCase() : state.cur || 'RUB';
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(j.date || '')) && String(j.date) <= todayStr(state) && String(j.date) > ymd(new Date(todayUTC(state) - 60 * 864e5)) ? j.date : null;
+    const kindMap = { 'продукты': 'продукты', 'кафе': 'кафе', 'аптека': 'аптека', 'одежда': 'одежда', 'транспорт': 'такси', 'быт': 'быт' };
+    const note = ('Чек' + (j.store ? ' ' + String(j.store).slice(0, 30) : '')).trim();
+    const envId = detectEnv(`${kindMap[j.kind] || ''} ${j.store || ''}`.trim(), state) || detectEnv('продукты', state) || getCats(state)[0].id;
+    const tx = makeTx({ sum: total, cur, note, date }, envId, state, await getRates());
+    if (!tx) { await tg(env, 'sendMessage', { chat_id: chat, text: '😕 Не смог получить курс валюты, попробуй позже.' }); return; }
+    const s2 = await st.addTx(tx);
+    await st.srvPatch({ flags: { ...((state.srv || {}).flags || {}), receipt: 1 } });
+    await tg(env, 'sendMessage', { chat_id: chat, text: '🧾 ' + summary(s2, envId, tx) + '\n\nСумма или категория не те? Нажми «↩️ Отменить» и напиши вручную.', reply_markup: appButton(origin) });
+    return;
+  }
   if (!text && (msg.voice || msg.audio)) {
     const heard = await transcribe(env, (msg.voice || msg.audio).file_id);
     if (!heard) { await tg(env, 'sendMessage', { chat_id: chat, text: '🎤 Не смог разобрать голосовое. Скажи ещё раз чуть чётче или напиши текстом: «кофе 300».' }); return; }
@@ -732,6 +931,40 @@ async function onUpdate(update, env, origin) {
 
   const reg = store(env, '__registry__');
   await reg.regUpdate(uid, { seen: Date.now(), name: msg.from.first_name || '', user: msg.from.username || '' });
+  const fi = foodIntent(text);
+  if (fi) {
+    const state = (await st.getState()) || {};
+    const srv = state.srv || {};
+    if (fi === 'pref') {
+      const what = text.replace(/^(я\s+)?(не люблю|не ем|не ешь|аллергия на|исключи)\s+/i, '').split(/,|\sи\s/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+      const prefs = [...new Set([...(srv.prefs || []), ...what])].slice(0, 20);
+      await st.srvPatch({ prefs });
+      await tg(env, 'sendMessage', { chat_id: chat, text: `👌 Запомнил: не использовать ${what.join(', ')}.\nВсе предпочтения: ${prefs.join(', ')}.\n\nНапиши «меню на неделю», и я учту.` });
+      return;
+    }
+    if (fi === 'prefs') {
+      if (/сбрось|забудь/i.test(text)) { await st.srvPatch({ prefs: [] }); await tg(env, 'sendMessage', { chat_id: chat, text: '🧹 Предпочтения сброшены.' }); return; }
+      await tg(env, 'sendMessage', { chat_id: chat, text: (srv.prefs || []).length ? `🍽 Не использую в меню: ${srv.prefs.join(', ')}.\nСбросить: «сбрось предпочтения».` : 'Предпочтений пока нет. Напиши, например: «не люблю грибы».' });
+      return;
+    }
+    if (fi === 'swap') {
+      if (!srv.menuAI) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Сначала составим меню: напиши «меню на неделю».' }); return; }
+      const x = text.toLowerCase();
+      const mi = MEALS.findIndex((w) => x.includes(w));
+      const DW = [['понедельник', 'пн'], ['вторник', 'вт'], ['сред', 'ср'], ['четверг', 'чт'], ['пятниц', 'пт'], ['суббот', 'сб'], ['воскресень', 'вс']];
+      let di = DW.findIndex(([a, b]) => x.includes(a) || new RegExp('(^|\\s)' + b + '(\\s|$)').test(x));
+      if (di < 0) di = (new Date(todayUTC(state)).getUTCDay() + 6) % 7;
+      if (!(await st.aiTick(todayStr(state), AI_MAX))) { await tg(env, 'sendMessage', { chat_id: chat, text: '😴 Лимит запросов к ИИ на сегодня закончился.' }); return; }
+      const old = srv.menuAI.days[di][mi + 1];
+      let m = null; try { m = await swapMeal(env, state, di, mi, ''); } catch (e) { console.error('swap', e); }
+      if (!m) { await tg(env, 'sendMessage', { chat_id: chat, text: '😕 Не получилось заменить, попробуй ещё раз.' }); return; }
+      await st.srvPatch({ menuAI: m });
+      await tg(env, 'sendMessage', { chat_id: chat, text: `🔄 ${DAYS7[di]}, ${MEALS[mi]}: «${old}» → «${m.days[di][mi + 1]}»`, reply_markup: { inline_keyboard: [[{ text: '📖 Открыть меню', web_app: { url: origin + '/#food' } }]] } });
+      return;
+    }
+    await foodMenu(env, st, state, chat, /^(подешевле|дешевле)$/i.test(text) ? ((srv.menuAI && srv.menuAI.q) || '') + ', подешевле' : text, origin);
+    return;
+  }
   const kw = keywordOf(text);
   if (kw === 'today' || kw === 'week' || kw === 'cats') {
     const state = (await st.getState()) || {};
@@ -751,7 +984,10 @@ async function onUpdate(update, env, origin) {
         '<b>Записать трату</b> — просто напиши: <code>кофе 300</code>, <code>вчера такси 500</code>, <code>еда 50 ю</code>, <code>10$ подписка</code>\n' +
         '<b>Отложить</b> — <code>отложил 5к</code>\n' +
         '<b>Голосом</b> — запиши голосовое 🎤\n' +
-        '<b>Напомнить</b> — <code>напомни в 16:30 оплатить интернет 500</code>\n\n' +
+        '<b>Напомнить</b> — <code>напомни в 16:30 оплатить интернет 500</code>\n' +
+        '<b>Чек</b> — просто сфоткай и пришли 🧾\n' +
+        '<b>Меню</b> — <code>меню на неделю, китайская кухня</code>, <code>не люблю грибы</code>, <code>замени ужин в среду</code> 👨‍🍳\n' +
+        '<b>Вопрос</b> — <code>на что я больше всего трачу?</code> 🤖\n\n' +
         'А ещё понимаю слова: <b>сегодня</b>, <b>итоги</b>, <b>неделя</b>, <b>категории</b>, <b>напоминания</b>, <b>платежи</b>, <b>отменить</b>. Или жми кнопки внизу 👇' });
       return;
     }
@@ -827,6 +1063,12 @@ async function onUpdate(update, env, origin) {
 
   const state = (await st.getState()) || {};
   const parsed = parseExpense(text, state);
+  if (!parsed && env.AI && isQuestion(text)) {
+    if (!(await st.aiTick(todayStr(state), AI_MAX))) { await tg(env, 'sendMessage', { chat_id: chat, text: '😴 На сегодня лимит вопросов к ИИ закончился. Завтра продолжим!' }); return; }
+    let a = ''; try { a = await advise(env, state, text); } catch (e) { console.error('advise', e); }
+    await tg(env, 'sendMessage', { chat_id: chat, text: a ? '🤖 ' + a.slice(0, 1500) : '😕 Не получилось ответить, попробуй ещё раз.', reply_markup: appButton(origin) });
+    return;
+  }
   if (!parsed) {
     await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '🤔 Не нашёл сумму.\n\n' + HELP });
     return;
@@ -915,6 +1157,28 @@ export default {
         await tg(env, 'sendMessage', { chat_id: admin, text: `💬 Отзыв от ${user.first_name || ''}${user.username ? ' @' + user.username : ''} (id ${user.id}):\n\n${String(text).slice(0, 1500)}` });
       }
       return json({ ok: true });
+    }
+
+    if (url.pathname === '/api/ai' && request.method === 'POST') {
+      const user = await checkInitData(request.headers.get('X-Init-Data'), env.BOT_TOKEN);
+      if (!user) return json({ ok: false, error: 'unauthorized' }, 401);
+      const st = store(env, user.id), state = (await st.getState()) || {};
+      const b = await request.json().catch(() => ({}));
+      if (b.act === 'prefs') return json({ ok: true, srv: await st.srvPatch({ prefs: (Array.isArray(b.prefs) ? b.prefs : []).map((x) => String(x).trim().toLowerCase()).filter(Boolean).slice(0, 20) }) });
+      if (b.act === 'clear') return json({ ok: true, srv: await st.srvPatch({ menuAI: null }) });
+      if (!env.AI) return json({ ok: false, error: 'no_ai' });
+      if (!(await st.aiTick(todayStr(state), AI_MAX))) return json({ ok: false, error: 'limit' });
+      if (b.act === 'menu') {
+        let m = null; try { m = await makeMenu(env, state, String(b.prompt || '').slice(0, 300)); } catch (e) { console.error('menu', e); }
+        if (!m) return json({ ok: false, error: 'ai' });
+        return json({ ok: true, srv: await st.srvPatch({ menuAI: m, flags: { ...((state.srv || {}).flags || {}), chef: 1 } }) });
+      }
+      if (b.act === 'swap') {
+        let m = null; try { m = await swapMeal(env, state, Math.max(0, Math.min(6, +b.day || 0)), Math.max(0, Math.min(2, +b.meal || 0)), String(b.wish || '').slice(0, 100)); } catch (e) { console.error('swap', e); }
+        if (!m) return json({ ok: false, error: 'ai' });
+        return json({ ok: true, srv: await st.srvPatch({ menuAI: m }) });
+      }
+      return json({ ok: false }, 400);
     }
 
     if (url.pathname === '/api/export' && request.method === 'POST') {
