@@ -76,6 +76,27 @@ export class UserStore extends DurableObject {
     await this.ctx.storage.put('state', s);
     return removed;
   }
+  /* напоминания */
+  async remAdd(rem) {
+    const list = (await this.ctx.storage.get('rems')) || [];
+    list.push(rem); list.sort((a, b) => a.at - b.at);
+    await this.ctx.storage.put('rems', list);
+    return list[0].at;
+  }
+  async remList() { return (await this.ctx.storage.get('rems')) || []; }
+  async remDel(id) {
+    const list = ((await this.ctx.storage.get('rems')) || []).filter((x) => x.id !== id);
+    await this.ctx.storage.put('rems', list);
+    return list.length ? list[0].at : null;
+  }
+  async remDue(now) {
+    const list = (await this.ctx.storage.get('rems')) || [];
+    const due = list.filter((x) => x.at <= now), rest = list.filter((x) => x.at > now);
+    await this.ctx.storage.put('rems', rest);
+    for (const d of due) await this.ctx.storage.put('rs:' + d.id, d);
+    return { due, next: rest.length ? rest[0].at : null };
+  }
+  async remSent(id, del) { const v = await this.ctx.storage.get('rs:' + id); if (del) await this.ctx.storage.delete('rs:' + id); return v || null; }
   async setPending(p) { await this.ctx.storage.put('pending', p); }
   async takePending() {
     const p = await this.ctx.storage.get('pending');
@@ -351,15 +372,162 @@ export function eveningText(state) {
   }
   return { text: text + '\n\nВсё записал? 🙂', empty: false };
 }
+/* ---------- «напомни …» ---------- */
+const WD = [['воскресень', 0], ['понедельник', 1], ['вторник', 2], ['сред', 3], ['четверг', 4], ['пятниц', 5], ['суббот', 6]];
+export function parseReminder(raw, state) {
+  let t = ' ' + raw.replace(/^\s*\/?(напомни(ть)?|напоминание)(?=\s|$)[:,]?/i, '').trim() + ' ';
+  const tz = Number.isFinite(state.tz) ? state.tz : 180;
+  const nowL = Date.now() + tz * 60000; // «местное» время в UTC-полях
+  const base = new Date(nowL);
+  let day = Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate());
+  let mins = null, dayGiven = false, rel = null;
+  const cut = (re) => { const m = t.match(re); if (m) t = t.replace(m[0], ' '); return m; };
+  let m;
+  if ((m = cut(/\sчерез\s+(полчаса|час|(\d+)\s*(мин[а-яё]*|м(?=\s)|час[а-яё]*|ч(?=\s)|д(ень|ня|ней)))/i))) {
+    if (/полчаса/i.test(m[1])) rel = 30;
+    else if (/^час$/i.test(m[1])) rel = 60;
+    else { const n = +m[2], u = m[3].toLowerCase(); rel = u.startsWith('м') ? n : u.startsWith('ч') ? n * 60 : n * 1440; }
+  }
+  if (rel != null) return finish(nowL + rel * 60000);
+  if (cut(/\sпослезавтра\s/i)) { day += 2 * 864e5; dayGiven = true; }
+  else if (cut(/\sзавтра\s/i)) { day += 864e5; dayGiven = true; }
+  else if (cut(/\sсегодня\s/i)) dayGiven = true;
+  if (!dayGiven && (m = cut(/\s(в|во)\s+(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)\s/i))) {
+    const w = WD.find(([k]) => m[2].toLowerCase().startsWith(k))[1];
+    let d = (w - new Date(day).getUTCDay() + 7) % 7; if (d === 0) d = 7;
+    day += d * 864e5; dayGiven = true;
+  }
+  if (!dayGiven && (m = cut(/\s(\d{1,2})[.\/](\d{1,2})\s/))) {
+    let y = base.getUTCFullYear(); let d = Date.UTC(y, +m[2] - 1, +m[1]);
+    if (d < day) d = Date.UTC(y + 1, +m[2] - 1, +m[1]);
+    day = d; dayGiven = true;
+  }
+  if (!dayGiven && (m = cut(/\s(\d{1,2})\s*(-?го)?\s*(числа|января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s/i))) {
+    const mon = MON_GEN.indexOf(m[3].toLowerCase());
+    let y = base.getUTCFullYear(), mo = mon >= 0 ? mon : base.getUTCMonth();
+    let d = Date.UTC(y, mo, +m[1]);
+    if (d < day) d = mon >= 0 ? Date.UTC(y + 1, mo, +m[1]) : Date.UTC(y, mo + 1, +m[1]);
+    day = d; dayGiven = true;
+  }
+  if ((m = cut(/\s(в|к)\s*(\d{1,2})([:.](\d{2}))?\s*(утра|дня|вечера|ночи|ч|час[а-яё]*)?\s/i)) || (m = cut(/\s()(\d{1,2})([:](\d{2}))\s*(утра|дня|вечера|ночи)?\s/))) {
+    let h = +m[2]; const mi = m[4] ? +m[4] : 0, pr = (m[5] || '').toLowerCase();
+    if ((pr === 'дня' || pr === 'вечера') && h < 12) h += 12;
+    if (pr === 'ночи' && h === 12) h = 0;
+    if (h < 24 && mi < 60) mins = h * 60 + mi;
+  } else if (cut(/\sутром\s/i)) mins = 9 * 60;
+  else if (cut(/\sднём\s|\sднем\s/i)) mins = 13 * 60;
+  else if (cut(/\sвечером\s/i)) mins = 19 * 60;
+  if (mins == null && !dayGiven) return null;
+  if (mins == null) mins = 10 * 60;
+  let at = day + mins * 60000;
+  if (at <= nowL && !dayGiven) at += 864e5;
+  if (at <= nowL) return null;
+  return finish(at);
+  function finish(atL) {
+    const text = t.replace(/\s+/g, ' ').replace(/^[\s,:–-]+|[\s,.]+$/g, '').trim();
+    return { atLocal: atL, at: atL - tz * 60000, text };
+  }
+}
+const whenHuman = (atL, state) => {
+  const tz = Number.isFinite(state.tz) ? state.tz : 180;
+  const d = new Date(atL), today = todayUTC(state), dd = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const hmS = `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+  const diff = Math.round((dd - today) / 864e5);
+  void tz;
+  return (diff === 0 ? 'сегодня' : diff === 1 ? 'завтра' : diff === 2 ? 'послезавтра' : `${d.getUTCDate()} ${MON_GEN[d.getUTCMonth()]}`) + ' в ' + hmS;
+};
+
+/* ---------- отчёт за неделю и итоги месяца ---------- */
+export function weekText(state) {
+  const main = state.cur || 'RUB', today = todayUTC(state);
+  const isSave = (t) => catInfo(t.env, state).save;
+  const rng = (a, b) => (state.tx || []).filter((t) => { const d = Date.parse(txDate(t) + 'T00:00:00Z'); return d > today - a * 864e5 && d <= today - b * 864e5 && !isSave(t); });
+  const w = rng(7, 0), pw = rng(14, 7);
+  if (!w.length) return null;
+  const s = sumOf(w), ps = sumOf(pw);
+  const by = {}; w.forEach((t) => { by[t.env] = (by[t.env] || 0) + t.sum; });
+  const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, v]) => { const c = catInfo(id, state); return `${c.ic} ${c.name} — ${fmt(v, main)}`; });
+  const days = new Set(w.map(txDate)); const noSpend = 7 - days.size;
+  const big = w.reduce((a, t) => (t.sum > a.sum ? t : a), w[0]);
+  let out = `📊 <b>Неделя в цифрах</b>\n\n💸 Потрачено: <b>${fmt(s, main)}</b>`;
+  if (ps) { const d = Math.round(((s - ps) / ps) * 100); out += d > 0 ? `\n📈 На ${d}% больше, чем неделей раньше` : d < 0 ? `\n📉 На ${-d}% меньше, чем неделей раньше 👏` : '\nСтолько же, сколько неделей раньше'; }
+  out += `\n\nБольше всего:\n${top.join('\n')}`;
+  out += `\n\n🧾 Самая крупная трата: ${fmt(big.sum, main)}${big.note ? ' — ' + big.note : ''}`;
+  if (noSpend) out += `\n🧘 Дней без трат: ${noSpend}`;
+  return out;
+}
+export function monthStartText(state, rates) {
+  const prev = (state.tx || []).filter((t) => inPeriod(t, period(state, -1)));
+  if (!prev.length) return null;
+  const isSave = (t) => catInfo(t.env, state).save;
+  const main = state.cur || 'RUB', P = period(state, -1);
+  const spent = sumOf(prev.filter((t) => !isSave(t)));
+  const plan = getCats(state).filter((c) => !c.save).reduce((a, c) => a + (c.amt || 0), 0);
+  let head = '🗓 <b>Новый месяц!</b> Вот как прошёл прошлый:\n\n';
+  if (state.mode !== 'simple' && plan) head += spent <= plan ? `🏆 Уложился в план! Сэкономлено ${fmt(plan - spent, main)}.\n\n` : `😬 План превышен на ${fmt(spent - plan, main)}. В этом месяце получится лучше 💪\n\n`;
+  void P;
+  return head + monthReport(state, rates, -1);
+}
 const hm = (t) => { const [h, m] = String(t || '').split(':').map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
+const APPKB = (env) => (env.ORIGIN ? [[{ text: '📊 Открыть бюджет', web_app: { url: env.ORIGIN } }]] : []);
 async function runSchedule(env) {
   const reg = store(env, '__registry__');
   const users = await reg.regList();
+  const now = Date.now();
+  let rates = null;
   for (const u of users) {
-    const n = u.notif;
-    if (!n || (!n.m && !n.e)) continue;
-    const local = new Date(Date.now() + (Number.isFinite(u.tz) ? u.tz : 180) * 60000);
+    const local = new Date(now + (Number.isFinite(u.tz) ? u.tz : 180) * 60000);
     const mins = local.getUTCHours() * 60 + local.getUTCMinutes(), today = ymd(local);
+    /* напоминания «напомни …» */
+    if (u.remNext && u.remNext <= now) {
+      try {
+        const { due, next } = await store(env, u.uid).remDue(now);
+        for (const d of due) {
+          const kb = [];
+          if (d.sum) kb.push([{ text: `✅ Оплатил — записать ${fmt(d.sum, d.cur || 'RUB')}`, callback_data: 'r:pay:' + d.id }]);
+          kb.push([{ text: '👍 Сделал', callback_data: 'r:ok:' + d.id }, { text: '⏰ Через час', callback_data: 'r:sn:' + d.id }]);
+          await tg(env, 'sendMessage', { chat_id: u.uid, text: '⏰ Напоминание: ' + d.text, reply_markup: { inline_keyboard: kb } });
+        }
+        await reg.regUpdate(u.uid, { remNext: next });
+      } catch (e) { console.error('rem', u.uid, e); }
+    }
+    /* регулярные платежи */
+    if (Array.isArray(u.subs) && u.subs.length && mins >= 10 * 60) {
+      const ym = today.slice(0, 7), dim = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 0)).getUTCDate();
+      const sent = u.subSent || {};
+      const dueSubs = u.subs.filter((x) => x && x.on !== false && Math.min(+x.day || 1, dim) === local.getUTCDate() && sent[x.id] !== ym);
+      for (const x of dueSubs) {
+        await tg(env, 'sendMessage', { chat_id: u.uid, text: `🔁 Сегодня платёж: ${x.ic || '💳'} ${x.name} — ${fmt(x.sum, x.cur || 'RUB')}`, reply_markup: { inline_keyboard: [[{ text: '✅ Оплатил — записать', callback_data: 's:pay:' + x.id }], [{ text: '⏭ Не в этот раз', callback_data: 's:skip:' + x.id }]] } });
+        sent[x.id] = ym;
+      }
+      if (dueSubs.length) await reg.regUpdate(u.uid, { subSent: sent });
+    }
+    const n = u.notif;
+    if (!n) continue;
+    /* отчёт за неделю: воскресенье 20:00, итоги месяца: день начала месяца 10:00 */
+    const wOn = n.w !== false && (n.m || n.e || n.w), moOn = n.mo !== false && (n.m || n.e || n.mo);
+    const wk = ymd(new Date(local.getTime() - local.getUTCDay() * 864e5));
+    if (wOn && local.getUTCDay() === 0 && mins >= 20 * 60 && u.last_w !== wk) {
+      try {
+        const st = (await store(env, u.uid).getState()) || {};
+        const t = weekText(st);
+        if (t) await tg(env, 'sendMessage', { chat_id: u.uid, parse_mode: 'HTML', text: t, reply_markup: { inline_keyboard: APPKB(env) } });
+        await reg.regUpdate(u.uid, { last_w: wk });
+      } catch (e) { console.error('week', u.uid, e); }
+    }
+    if (moOn && mins >= 10 * 60) {
+      try {
+        const st0 = { start: u.start || 1 };
+        if (local.getUTCDate() === Math.min(st0.start, 28) && u.last_mo !== today) {
+          const st = (await store(env, u.uid).getState()) || {};
+          rates = rates || (await getRates());
+          const t = monthStartText(st, rates);
+          if (t) await tg(env, 'sendMessage', { chat_id: u.uid, parse_mode: 'HTML', text: t, reply_markup: { inline_keyboard: APPKB(env) } });
+          await reg.regUpdate(u.uid, { last_mo: today });
+        }
+      } catch (e) { console.error('month', u.uid, e); }
+    }
+    if (!n.m && !n.e) continue;
     for (const k of ['m', 'e']) {
       const at = hm(n[k + 't']);
       if (!n[k] || at == null || mins < at || mins >= at + 60 || u['last_' + k] === today) continue;
@@ -409,11 +577,75 @@ async function tg(env, method, body) {
 }
 const appButton = (origin) => ({ inline_keyboard: [[{ text: '📊 Открыть бюджет', web_app: { url: origin + '/' } }]] });
 
+async function transcribe(env, fileId) {
+  if (!env.AI) return null;
+  try {
+    const f = await tg(env, 'getFile', { file_id: fileId });
+    if (!f.ok) return null;
+    const buf = await (await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${f.result.file_path}`)).arrayBuffer();
+    if (buf.byteLength > 6e6) return null;
+    let b64 = ''; const u8 = new Uint8Array(buf);
+    for (let i = 0; i < u8.length; i += 0x8000) b64 += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+    b64 = btoa(b64);
+    try {
+      const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: b64, language: 'ru', initial_prompt: 'Траты: кофе 300, такси 500, еда 50 юаней, отложил 5000.' });
+      if (r && r.text && r.text.trim()) return r.text.trim();
+    } catch (e) { console.error('whisper-turbo', e); }
+    const r2 = await env.AI.run('@cf/openai/whisper', { audio: [...u8] });
+    return r2 && r2.text ? r2.text.trim() : null;
+  } catch (e) { console.error('voice', e); return null; }
+}
+
 async function onUpdate(update, env, origin) {
   if (update.callback_query && update.callback_query.data === 'ns') {
     const q = update.callback_query;
     await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Засчитано 🧘' });
     await tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text: '🧘 День без трат! Так держать 💪', reply_markup: appButton(origin) });
+    return;
+  }
+  if (update.callback_query && /^[rs]:/.test(update.callback_query.data || '')) {
+    const q = update.callback_query, uid = q.from.id, [kind, act, id] = q.data.split(':');
+    const st = store(env, uid), reg = store(env, '__registry__');
+    const edit = (text, kb) => tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text, reply_markup: kb || appButton(origin) });
+    const state0 = (await st.getState()) || {};
+    if (kind === 'r') {
+      const d = await st.remSent(+id, act !== 'sn');
+      if (!d) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Уже обработано' }); return; }
+      if (act === 'sn') {
+        await st.remSent(+id, true);
+        const nd = { ...d, id: Date.now(), at: Date.now() + 3600e3 };
+        await reg.regUpdate(uid, { remNext: await st.remAdd(nd) });
+        await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Напомню через час ⏰' });
+        await edit(`⏰ ${d.text}\n\nОтложено на час.`, { inline_keyboard: [] });
+        return;
+      }
+      if (act === 'pay' && d.sum) {
+        const parsed = { sum: d.sum, cur: d.cur, note: d.text, date: null };
+        const envId = detectEnv(d.text, state0) || 'other';
+        const tx = makeTx(parsed, getCats(state0).some((c) => c.id === envId) ? envId : getCats(state0)[0].id, state0, await getRates());
+        if (tx) { const s2 = await st.addTx(tx); await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Записал ✓' }); await edit('✅ ' + d.text + '\n\n' + summary(s2, tx.env, tx)); return; }
+      }
+      await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Отлично 👍' });
+      await edit('✅ Готово: ' + d.text, { inline_keyboard: [] });
+      return;
+    }
+    const sub = (state0.subs || []).find((x) => String(x.id) === id);
+    if (!sub) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Платёж не найден' }); return; }
+    if (act === 'skip') { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Ок' }); await edit(`⏭ ${sub.name}: в этот раз пропускаем.`, { inline_keyboard: [] }); return; }
+    const envId = getCats(state0).some((c) => c.id === sub.env) ? sub.env : (detectEnv(sub.name, state0) || getCats(state0)[0].id);
+    const tx = makeTx({ sum: sub.sum, cur: sub.cur, note: sub.name, date: null }, envId, state0, await getRates());
+    if (!tx) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Не смог получить курс, попробуй позже' }); return; }
+    const s2 = await st.addTx(tx);
+    await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Записал ✓' });
+    await edit('🔁 ' + summary(s2, envId, tx));
+    return;
+  }
+  if (update.callback_query && /^rd:/.test(update.callback_query.data || '')) {
+    const q = update.callback_query, st = store(env, q.from.id);
+    const next = await st.remDel(+q.data.slice(3));
+    await store(env, '__registry__').regUpdate(q.from.id, { remNext: next });
+    await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Отменено' });
+    await tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text: '🗑 Напоминание отменено.' });
     return;
   }
   if (update.callback_query) {
@@ -442,9 +674,17 @@ async function onUpdate(update, env, origin) {
   }
 
   const msg = update.message;
-  if (!msg || !msg.text || msg.chat.type !== 'private') return;
-  const uid = msg.from.id, chat = msg.chat.id, text = msg.text.trim();
+  if (!msg || msg.chat.type !== 'private') return;
+  const uid = msg.from.id, chat = msg.chat.id;
   const st = store(env, uid);
+  let text = (msg.text || '').trim();
+  if (!text && (msg.voice || msg.audio)) {
+    const heard = await transcribe(env, (msg.voice || msg.audio).file_id);
+    if (!heard) { await tg(env, 'sendMessage', { chat_id: chat, text: '🎤 Не смог разобрать голосовое. Скажи ещё раз чуть чётче или напиши текстом: «кофе 300».' }); return; }
+    text = heard.replace(/[.!?…]+$/g, '').trim();
+    await tg(env, 'sendMessage', { chat_id: chat, text: `🎤 Услышал: «${text}»` });
+  }
+  if (!text) return;
 
   const reg = store(env, '__registry__');
   await reg.regUpdate(uid, { seen: Date.now(), name: msg.from.first_name || '', user: msg.from.username || '' });
@@ -457,7 +697,9 @@ async function onUpdate(update, env, origin) {
         '2️⃣ Пиши траты сюда, как другу:\n' +
         '   • <code>кофе 300</code>\n   • <code>вчера такси 35 ю</code>\n   • <code>отложил 5к</code>\n' +
         '3️⃣ Я сам разложу по категориям и покажу графики в приложении.\n\n' +
-        '<code>итоги</code> — сводка за месяц, /undo — отменить последнюю запись.',
+        '🎤 Можно голосом: просто запиши голосовое «такси пятьсот».\n' +
+        '⏰ <code>напомни в 16:30 оплатить интернет 500</code>\n\n' +
+        '<code>итоги</code> — сводка за месяц, <code>напоминания</code> — список, /undo — отменить последнюю запись.',
     });
     return;
   }
@@ -469,6 +711,7 @@ async function onUpdate(update, env, origin) {
   if (text === '/stats') {
     if ((await reg.getAdmin()) !== uid) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Команда только для админа.' }); return; }
     const list = await reg.regList(), wk = Date.now() - 7 * 864e5, day = Date.now() - 864e5;
+    for (const u of list.slice(0, 300)) { try { const s0 = (await store(env, u.uid).getState()) || {}; u.n = (s0.tx || []).length; u.onb = !!s0.onboarded || u.onb; } catch (e) { /* пропускаем */ } }
     const c = (f) => list.filter(f).length;
     await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text:
       `📊 <b>Статистика</b>\n\n👥 Всего зашли: ${list.length}\n🧭 Прошли настройку: ${c((u) => u.onb)}\n✍️ Записали хотя бы 1 трату: ${c((u) => u.n > 0)}\n🔥 Активны за сутки: ${c((u) => u.seen > day)}\n📅 Активны за неделю: ${c((u) => u.seen > wk)}\n🔔 С напоминаниями: ${c((u) => u.notif && (u.notif.m || u.notif.e))}\n\n` +
@@ -481,6 +724,32 @@ async function onUpdate(update, env, origin) {
       chat_id: chat,
       text: r ? `↩️ Удалил последнюю трату: ${fmt(r.orig ?? r.sum, r.cur || 'RUB')}${r.note ? ' — ' + r.note : ''}` : 'Нечего отменять: траты из чата не найдены.',
     });
+    return;
+  }
+  if (/^\/?(напоминания|reminders)$/i.test(text)) {
+    const list = await st.remList(), state = (await st.getState()) || {};
+    if (!list.length) { await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: 'Напоминаний нет. Напиши, например:\n<code>напомни завтра в 10 оплатить интернет 500</code>' }); return; }
+    const tz = Number.isFinite(state.tz) ? state.tz : 180;
+    await tg(env, 'sendMessage', { chat_id: chat, text: '⏰ Напоминания:\n\n' + list.map((x, i) => `${i + 1}. ${whenHuman(x.at + tz * 60000, state)} — ${x.text}`).join('\n'),
+      reply_markup: { inline_keyboard: list.slice(0, 10).map((x, i) => [{ text: `🗑 Отменить ${i + 1}`, callback_data: 'rd:' + x.id }]) } });
+    return;
+  }
+  if (/^\/?(напомни|напомнить|напоминание)(\s|$)/i.test(text)) {
+    const state = (await st.getState()) || {};
+    const r0 = parseReminder(text, state);
+    if (!r0) { await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '⏰ Не понял, когда напомнить. Примеры:\n<code>напомни в 16:30 оплатить интернет</code>\n<code>напомни завтра в 10 позвонить в банк</code>\n<code>напомни через 2 часа забрать посылку</code>\n<code>напомни 25 числа аренда 30000</code>' }); return; }
+    if (!r0.text) { await tg(env, 'sendMessage', { chat_id: chat, text: 'О чём напомнить? Например: напомни в 16:30 оплатить интернет' }); return; }
+    const pe = parseExpense(r0.text, state);
+    const rem = { id: Date.now(), at: r0.at, text: r0.text, sum: pe ? pe.sum : null, cur: pe ? pe.cur || state.cur || 'RUB' : null };
+    await reg.regUpdate(uid, { remNext: await st.remAdd(rem), tz: state.tz });
+    await tg(env, 'sendMessage', { chat_id: chat, text: `⏰ Напомню ${whenHuman(r0.atLocal, state)}: ${r0.text}${rem.sum ? '\nВ напоминании будет кнопка «Оплатил», и я сам запишу трату.' : ''}`, reply_markup: { inline_keyboard: [[{ text: '🗑 Отменить', callback_data: 'rd:' + rem.id }]] } });
+    return;
+  }
+  if (/^\/?(подписки|платежи|регулярные)$/i.test(text)) {
+    const state = (await st.getState()) || {}, main = state.cur || 'RUB', subs = (state.subs || []).filter((x) => x.on !== false);
+    if (!subs.length) { await tg(env, 'sendMessage', { chat_id: chat, text: '🔁 Регулярных платежей пока нет. Добавь их в приложении: вкладка «Конверты» → «Регулярные платежи». Я буду напоминать в день оплаты.', reply_markup: appButton(origin) }); return; }
+    const rates = await getRates(), tot = subs.reduce((a, x) => a + (conv(x.sum, x.cur || main, main, rates) || 0), 0);
+    await tg(env, 'sendMessage', { chat_id: chat, text: '🔁 Регулярные платежи:\n\n' + subs.sort((a, b) => a.day - b.day).map((x) => `${x.ic || '💳'} ${x.name} — ${fmt(x.sum, x.cur || main)}, ${x.day}-го`).join('\n') + `\n\nВсего в месяц ≈ ${fmt(tot, main)}`, reply_markup: appButton(origin) });
     return;
   }
   if (/^\/?(итоги|итог|месяц|отч[её]т|month|report)(\s|$)/i.test(text)) {
@@ -600,7 +869,7 @@ export default {
         const body = await request.json();
         if (!body || typeof body.state !== 'object') return json({ ok: false }, 400);
         const s = await st.putState(body.state, Array.isArray(body.deleted) ? body.deleted : []);
-        await reg.regUpdate(user.id, { seen: Date.now(), tz: s.tz, notif: s.notif, onb: !!s.onboarded, n: (s.tx || []).length, name: user.first_name || '', user: user.username || '' });
+        await reg.regUpdate(user.id, { seen: Date.now(), tz: s.tz, notif: s.notif, subs: (s.subs || []).slice(0, 50), start: s.start || 1, onb: !!s.onboarded, n: (s.tx || []).length, name: user.first_name || '', user: user.username || '' });
         return json({ ok: true, state: s });
       }
       return json({ ok: false }, 405);
