@@ -244,7 +244,7 @@ input[type=date]{width:100%;box-sizing:border-box;font:500 15px var(--body);colo
 .tour-tip .row2 button{font:600 14px var(--body);border:0;border-radius:10px;padding:9px 14px;cursor:pointer}
 .tour-next{background:var(--accent);color:#fff}
 .tour-skip{background:var(--soft);color:var(--muted)}
-.tour-block{position:fixed;inset:0;z-index:49}
+.tour-block{position:fixed;inset:0;z-index:49;touch-action:none;overscroll-behavior:contain}
 /* анимация «пишешь боту → в приложении» */
 .anim{background:var(--soft);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
 .anim .chat{display:flex;flex-direction:column;gap:8px;min-height:104px}
@@ -1394,7 +1394,7 @@ function startTour(){if(S.demo)exitDemo(true);S.seen={};selectTab('t-over');wind
 function runTour(key){TKEY=key;TI=0;
   ['tour-block','tour-hole','tour-tip'].forEach(c=>{let el=document.querySelector('.'+c);if(!el){el=document.createElement('div');el.className=c;document.body.appendChild(el)}});
   drawTour()}
-function endTour(){document.querySelectorAll('.tour-block,.tour-hole,.tour-tip').forEach(x=>x.remove());
+function endTour(){TEL=null;document.querySelectorAll('.tour-block,.tour-hole,.tour-tip').forEach(x=>x.remove());
   S.seen=S.seen||{};S.seen[TKEY]=1;
   if(TKEY==='main'){const first=!S.toured;S.toured=true;if(first||!S.tx.length)setTimeout(startQuest,300)}
   save()}
@@ -1411,16 +1411,26 @@ function drawTour(){
   const media=an?`<div class="anim${an==='bot'?' bc':''}${an==='slider'?' sl':''}" data-anim="${an}"></div>`:(sel?'':ANIM);
   tip.innerHTML=`<b>${t}</b><p>${p}</p>${media}<div class="row2"><small>${TI+1} из ${T.length}</small>${!last?'<button type="button" class="tour-skip">Пропустить</button>':''}<button type="button" class="tour-next">${!last?'Дальше →':'Понятно 👍'}</button></div>`;
   mountAnims(tip);
-  if(el){let r=el.getBoundingClientRect();const h=tip.offsetHeight,pd=6;
+  TEL=el;
+  if(el){let r=el.getBoundingClientRect();const h=tip.offsetHeight;
     if(!(r.bottom+16+h<innerHeight)&&!(r.top-16-h>8)){
       const tabsH=(document.querySelector('.tabs')||{}).offsetHeight||0;
-      window.scrollBy(0,r.top-tabsH-24);r=el.getBoundingClientRect();
-      Object.assign(hole.style,{left:r.left-pd+'px',top:r.top-pd+'px',width:r.width+pd*2+'px',height:r.height+pd*2+'px'})}
-    tip.style.top=(r.bottom+16+h<innerHeight?r.bottom+16:r.top-16-h>8?r.top-16-h:Math.max(8,Math.min(innerHeight-h-8,r.bottom+12)))+'px'}
+      window.scrollBy(0,r.top-tabsH-24)}
+    placeTour();setTimeout(placeTour,350);
+  }
   else tip.style.top=Math.max(20,(innerHeight-tip.offsetHeight)/2)+'px';
   tip.querySelector('.tour-next').onclick=()=>{TI++;if(TI>=T.length)endTour();else drawTour()};
   const sk=tip.querySelector('.tour-skip');if(sk)sk.onclick=endTour;
 }
+let TEL=null,TRAF=0;
+function placeTour(){const el=TEL,hole=document.querySelector('.tour-hole'),tip=document.querySelector('.tour-tip');if(!el||!hole||!tip||!el.isConnected)return;
+  const r=el.getBoundingClientRect(),h=tip.offsetHeight,pd=6;
+  Object.assign(hole.style,{display:'block',left:r.left-pd+'px',top:r.top-pd+'px',width:r.width+pd*2+'px',height:r.height+pd*2+'px'});
+  tip.style.top=(r.bottom+16+h<innerHeight?r.bottom+16:r.top-16-h>8?r.top-16-h:Math.max(8,Math.min(innerHeight-h-8,r.bottom+12)))+'px'}
+addEventListener('scroll',()=>{if(TEL&&!TRAF)TRAF=requestAnimationFrame(()=>{TRAF=0;placeTour()})},{passive:true});
+addEventListener('resize',()=>{if(TEL)placeTour()});
+const stopScroll=e=>{if(e.target.closest&&e.target.closest('.tour-block'))e.preventDefault()};
+addEventListener('touchmove',stopScroll,{passive:false});addEventListener('wheel',stopScroll,{passive:false});
 function tabTour(id){
   if(!S.onboarded||S.demo||document.querySelector('.tour-tip')||!$('wiz').hidden)return;
   const key=id==='t-env'?(S.mode==='env'?'env':'envS'):id==='t-tx'?'tx':id==='t-food'?'food':null;
