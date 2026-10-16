@@ -1250,8 +1250,12 @@ function drawTour(){
   const media=an?`<div class="anim${an==='bot'?' bc':''}${an==='slider'?' sl':''}" data-anim="${an}"></div>`:(sel?'':ANIM);
   tip.innerHTML=`<b>${t}</b><p>${p}</p>${media}<div class="row2"><small>${TI+1} из ${T.length}</small>${!last?'<button type="button" class="tour-skip">Пропустить</button>':''}<button type="button" class="tour-next">${!last?'Дальше →':'Понятно 👍'}</button></div>`;
   mountAnims(tip);
-  if(el){const r=el.getBoundingClientRect(),h=tip.offsetHeight;
-    tip.style.top=(r.bottom+16+h<innerHeight?r.bottom+16:r.top-16-h>8?r.top-16-h:Math.max(8,innerHeight-h-12))+'px'}
+  if(el){let r=el.getBoundingClientRect();const h=tip.offsetHeight,pd=6;
+    if(!(r.bottom+16+h<innerHeight)&&!(r.top-16-h>8)){
+      const tabsH=(document.querySelector('.tabs')||{}).offsetHeight||0;
+      window.scrollBy(0,r.top-tabsH-24);r=el.getBoundingClientRect();
+      Object.assign(hole.style,{left:r.left-pd+'px',top:r.top-pd+'px',width:r.width+pd*2+'px',height:r.height+pd*2+'px'})}
+    tip.style.top=(r.bottom+16+h<innerHeight?r.bottom+16:r.top-16-h>8?r.top-16-h:Math.max(8,Math.min(innerHeight-h-8,r.bottom+12)))+'px'}
   else tip.style.top=Math.max(20,(innerHeight-tip.offsetHeight)/2)+'px';
   tip.querySelector('.tour-next').onclick=()=>{TI++;if(TI>=T.length)endTour();else drawTour()};
   const sk=tip.querySelector('.tour-skip');if(sk)sk.onclick=endTour;
