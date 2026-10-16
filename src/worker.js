@@ -745,7 +745,7 @@ async function onUpdate(update, env, origin) {
     await tg(env, 'sendMessage', { chat_id: chat, text: `⏰ Напомню ${whenHuman(r0.atLocal, state)}: ${r0.text}${rem.sum ? '\nВ напоминании будет кнопка «Оплатил», и я сам запишу трату.' : ''}`, reply_markup: { inline_keyboard: [[{ text: '🗑 Отменить', callback_data: 'rd:' + rem.id }]] } });
     return;
   }
-  if (/^\/?(подписки|платежи|регулярные)$/i.test(text)) {
+  if (/^\/?(подписки|платежи|регулярные|subs)$/i.test(text)) {
     const state = (await st.getState()) || {}, main = state.cur || 'RUB', subs = (state.subs || []).filter((x) => x.on !== false);
     if (!subs.length) { await tg(env, 'sendMessage', { chat_id: chat, text: '🔁 Регулярных платежей пока нет. Добавь их в приложении: вкладка «Конверты» → «Регулярные платежи». Я буду напоминать в день оплаты.', reply_markup: appButton(origin) }); return; }
     const rates = await getRates(), tot = subs.reduce((a, x) => a + (conv(x.sum, x.cur || main, main, rates) || 0), 0);
@@ -811,6 +811,20 @@ export default {
       await tg(env, 'setChatMenuButton', {
         menu_button: { type: 'web_app', text: 'Мой бюджет', web_app: { url: origin + '/' } },
       });
+      await tg(env, 'setMyCommands', { commands: [
+        { command: 'start', description: '👋 Как пользоваться' },
+        { command: 'report', description: '📅 Итоги месяца' },
+        { command: 'reminders', description: '⏰ Мои напоминания' },
+        { command: 'subs', description: '🔁 Регулярные платежи' },
+        { command: 'undo', description: '↩️ Отменить последнюю запись' },
+        { command: 'help', description: '💡 Примеры, как писать траты' },
+      ] });
+      await tg(env, 'setMyDescription', { description:
+        '💌 Бюджет, который ведётся сам.\n\n' +
+        'Пиши траты как другу: «кофе 300», «такси 35 ю», «отложил 5к». Можно голосом 🎤\n\n' +
+        'Я разложу всё по категориям, посчитаю в любой валюте и покажу, сколько можно потратить сегодня.\n\n' +
+        '⏰ Напомню об оплатах, пришлю итоги недели и месяца.\n\nЖми «Старт» 👇' });
+      await tg(env, 'setMyShortDescription', { short_description: '💌 Бюджет в Telegram: пиши траты как другу, а я посчитаю, сколько можно тратить сегодня.' });
       return new Response(
         r.ok ? '✅ Готово! Бот подключён к серверу. Можно закрыть страницу и писать боту.' : '❌ Ошибка: ' + JSON.stringify(r),
         { headers: { 'content-type': 'text/plain; charset=utf-8' } },
