@@ -2,18 +2,19 @@
 // Секрет BOT_TOKEN задаётся в настройках Worker в Cloudflare (Variables and Secrets).
 import { DurableObject } from 'cloudflare:workers';
 
-const TZ = 'Europe/Moscow';
 
 const ENVS = [
   { id: 'food', ic: '🛒', name: 'Продукты', kw: ['продукт', 'еда', 'еду', 'магаз', 'пятёроч', 'пятероч', 'магнит', 'перекрест', 'лента', 'ашан', 'вкусвил', 'хлеб', 'молок', 'овощ', 'фрукт', 'мясо', 'закупк', 'продукты'] },
-  { id: 'home', ic: '🧴', name: 'Быт и химия', kw: ['быт', 'хими', 'порош', 'мыло', 'шампун', 'хоз', 'уборк', 'посуд'] },
+  { id: 'home', ic: '🧴', name: 'Быт и химия', alt: ['other'], kw: ['быт', 'хими', 'порош', 'мыло', 'шампун', 'хоз', 'уборк', 'посуд'] },
   { id: 'transport', ic: '🚌', name: 'Транспорт', kw: ['такси', 'метро', 'автобус', 'бензин', 'проезд', 'транспорт', 'заправ', 'парковк', 'каршер', 'электрич', 'поезд'] },
-  { id: 'kids', ic: '🧸', name: 'Дети', kw: ['дет', 'ребен', 'ребён', 'садик', 'школ', 'игрушк', 'кружок', 'кружк', 'памперс', 'подгуз'] },
-  { id: 'health', ic: '💊', name: 'Здоровье', kw: ['аптек', 'лекарств', 'врач', 'здоров', 'анализ', 'стоматолог', 'зуб', 'таблет'] },
-  { id: 'clothes', ic: '👕', name: 'Одежда', kw: ['одежд', 'обув', 'куртк', 'ботин', 'кроссов', 'футболк', 'джинс', 'платье', 'штаны'] },
+  { id: 'kids', ic: '🧸', name: 'Дети', alt: ['other'], kw: ['дет', 'ребен', 'ребён', 'садик', 'школ', 'игрушк', 'кружок', 'кружк', 'памперс', 'подгуз'] },
+  { id: 'health', ic: '💊', name: 'Здоровье', alt: ['other'], kw: ['аптек', 'лекарств', 'врач', 'здоров', 'анализ', 'стоматолог', 'зуб', 'таблет'] },
+  { id: 'clothes', ic: '👕', name: 'Одежда', alt: ['shop', 'other'], kw: ['одежд', 'обув', 'куртк', 'ботин', 'кроссов', 'футболк', 'джинс', 'платье', 'штаны'] },
   { id: 'fun', ic: '🎉', name: 'Отдых и кафе', kw: ['кафе', 'ресторан', 'кино', 'кофе', 'бар', 'доставк', 'развлеч', 'отдых', 'пицц', 'суши', 'бургер', 'шаурм'] },
   { id: 'safe', ic: '🛟', name: 'Подушка', save: true, kw: ['подушк', 'копилк', 'отлож'] },
   { id: 'goal', ic: '🏝️', name: 'Отпуск', save: true, kw: ['цель', 'отпуск'] },
+  { id: 'shop', ic: '🛍️', name: 'Покупки', legacy: false, kw: ['покупк', 'таобао', 'taobao', 'вайлдб', 'wildb', 'озон', 'ozon', 'маркетплейс', 'алиэкспр', 'заказ'], alt: ['clothes', 'other'] },
+  { id: 'other', ic: '📦', name: 'Прочее', legacy: false, kw: ['прочее', 'разное'] },
 ];
 
 const HELP =
@@ -140,45 +141,117 @@ export async function checkInitData(initData, token) {
   try { return JSON.parse(p.get('user') || 'null'); } catch { return null; }
 }
 
+/* ---------- даты ---------- */
+const pad2 = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+// «локальное сейчас» пользователя: UTC-поля этой даты = его местное время
+function localNow(state) {
+  const off = state && Number.isFinite(state.tz) ? state.tz : 180;
+  return new Date(Date.now() + off * 60000);
+}
+const todayUTC = (state) => { const n = localNow(state); return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()); };
+export const todayStr = (state) => ymd(new Date(todayUTC(state)));
+const MON3 = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const MON_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+// «вчера такси 300», «15.10 кафе 500», «3 дня назад 200 еда», «12 октября 900 одежда»
+export function extractDate(text, state) {
+  const base = todayUTC(state);
+  const ago = (n) => ymd(new Date(base - n * 864e5));
+  const fix = (y, m, d) => {
+    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+    const now = new Date(base);
+    let yy = y ?? now.getUTCFullYear();
+    if (yy < 100) yy += 2000;
+    let t = Date.UTC(yy, m - 1, d);
+    if (y == null && t > base) t = Date.UTC(yy - 1, m - 1, d);
+    if (t > base || base - t > 400 * 864e5) return null;
+    return ymd(new Date(t));
+  };
+  const rules = [
+    [/(^|\s)позавчера(?=$|[\s.,!])/i, () => ago(2)],
+    [/(^|\s)вчера(?=$|[\s.,!])/i, () => ago(1)],
+    [/(^|\s)сегодня(?=$|[\s.,!])/i, () => ago(0)],
+    [/(^|\s)(\d{1,2})\s*(?:дн(?:я|ей|ь)|д\.?)\s*назад(?=$|[\s.,!])/i, (m) => (+m[2] <= 60 ? ago(+m[2]) : null), true],
+    [/(^|\s)(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?(?=$|\s)/, (m) => fix(m[4] ? +m[4] : null, +m[3], +m[2]), true],
+    [new RegExp('(^|\\s)(\\d{1,2})\\s+(' + MON_GEN.join('|') + ')(?=$|[\\s.,!])', 'i'), (m) => fix(null, MON_GEN.indexOf(m[3].toLowerCase()) + 1, +m[2]), true],
+  ];
+  for (const [re, fn, numeric] of rules) {
+    const m = text.match(re);
+    if (!m) continue;
+    const rest = (text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length)).replace(/\s+/g, ' ').trim();
+    if (numeric && !/\d/.test(rest)) continue; // число нужно оставить под сумму
+    const date = fn(m);
+    if (date) return { date, rest };
+  }
+  return { date: null, rest: text };
+}
+
 // «1,5к кафе» → { sum: 1500, note: 'кафе' }
-export function parseExpense(raw) {
-  const { cur, rest: text } = extractCurrency(raw);
+export function parseExpense(raw, state) {
+  const { date, rest: noDate } = extractDate(raw, state);
+  const { cur, rest: text } = extractCurrency(noDate);
   const m = text.match(/(\d[\d\s]*(?:[.,]\d+)?)\s*(к|k|тыс\.?|тысяч[аи]?)?(?=\s|$|[.,!?])/i);
   if (!m) return null;
   let sum = parseFloat(m[1].replace(/\s/g, '').replace(',', '.'));
   if (m[2]) sum *= 1000;
-  sum = Math.round(sum);
+  sum = Math.round(sum * 100) / 100;
   if (!sum || sum <= 0 || sum > 10_000_000) return null;
   const note = (text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length))
     .replace(/₽|руб(лей|ля|ль)?\.?/gi, ' ')
     .replace(/(^|\s)р\.?(?=\s|$)/gi, ' ')
     .replace(/\s+/g, ' ').trim();
-  return { sum, note, cur };
+  return { sum, note, cur, date };
 }
+
+/* ---------- категории пользователя ---------- */
+export function getCats(state) {
+  if (Array.isArray(state?.cats) && state.cats.length) return state.cats;
+  return ENVS.filter((e) => e.legacy !== false).map((e) => ({ id: e.id, ic: state?.i?.[e.id] || e.ic, name: state?.n?.[e.id] || e.name, save: !!e.save, amt: state?.a?.[e.id] }));
+}
+const catInfo = (id, state) => getCats(state).find((c) => c.id === id) || { id, ic: '📦', name: 'Прочее', save: false };
 
 export function detectEnv(note, state) {
   const t = note.toLowerCase();
-  const names = state?.n || {};
-  for (const e of ENVS) {
-    const nm = (names[e.id] || '').toLowerCase().trim();
-    if (nm && nm.length >= 3 && t.includes(nm)) return e.id;
+  if (!t) return null;
+  const cats = getCats(state);
+  for (const c of cats) {
+    const nm = (c.name || '').toLowerCase().trim();
+    if (nm.length >= 3 && t.includes(nm)) return c.id;
   }
-  for (const e of ENVS) if (e.kw.some((k) => t.includes(k))) return e.id;
+  for (const c of cats) {
+    const words = (c.name || '').toLowerCase().split(/[\s,]+/).filter((w) => w.length >= 4);
+    if (words.some((w) => t.includes(w.slice(0, Math.max(4, w.length - 2))))) return c.id;
+  }
+  for (const e of ENVS) {
+    if (!e.kw.some((k) => t.includes(k))) continue;
+    if (cats.some((c) => c.id === e.id)) return e.id;
+    if (e.save) { const s = cats.find((c) => c.save); if (s) return s.id; }
+    if (e.alt) { const a = e.alt.find((id) => cats.some((c) => c.id === id)); if (a) return a; }
+  }
   return null;
 }
 
-const envInfo = (id, state) => {
-  const d = ENVS.find((e) => e.id === id);
-  return { ...d, name: state?.n?.[id] || d.name, ic: state?.i?.[id] || d.ic };
+/* ---------- периоды ---------- */
+export function period(state, off = 0) {
+  const sd = state?.start || 1;
+  const n = new Date(todayUTC(state));
+  let y = n.getUTCFullYear(), m = n.getUTCMonth();
+  if (n.getUTCDate() < sd) m--;
+  const s = new Date(Date.UTC(y, m + off, sd)), e = new Date(Date.UTC(y, m + off + 1, sd));
+  const last = new Date(e - 864e5);
+  const label = sd === 1 ? MONTHS[s.getUTCMonth()] : `${s.getUTCDate()} ${MON3[s.getUTCMonth()]} – ${last.getUTCDate()} ${MON3[last.getUTCMonth()]}`;
+  const elapsed = off === 0 ? Math.round((n - s) / 864e5) + 1 : Math.round((e - s) / 864e5);
+  return { s: ymd(s), e: ymd(e), label, elapsed };
+}
+const txDate = (t) => t.date || `${t.m || '0000-00'}-${pad2(t.day || 1)}`;
+const inPeriod = (t, P) => { const d = txDate(t); return d >= P.s && d < P.e; };
+const dateHuman = (d, state) => {
+  const t = todayStr(state);
+  if (d === t) return 'сегодня';
+  if (d === ymd(new Date(todayUTC(state) - 864e5))) return 'вчера';
+  return `${+d.slice(8)} ${MON3[+d.slice(5, 7) - 1]}`;
 };
-
-function dayToday() {
-  return +new Intl.DateTimeFormat('en-US', { timeZone: TZ, day: 'numeric' }).format(new Date());
-}
-function ymToday() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
-}
-const inMonth = (t, ym) => (t.m || ym) === ym;
 
 function makeTx(p, envId, state, rates) {
   const main = state.cur || 'RUB';
@@ -186,13 +259,13 @@ function makeTx(p, envId, state, rates) {
   const base = conv(p.sum, cur, main, rates);
   if (base == null) return null;
   const usd = conv(p.sum, cur, 'USD', rates);
-  return { id: Date.now(), day: dayToday(), m: ymToday(), env: envId, sum: Math.round(base), orig: p.sum, cur, usd: usd == null ? null : Math.round(usd * 100) / 100, note: p.note, src: 'bot' };
+  return { id: Date.now(), date: p.date || todayStr(state), env: envId, sum: Math.round(base), orig: p.sum, cur, usd: usd == null ? null : Math.round(usd * 100) / 100, note: p.note, src: 'bot' };
 }
 
-export function monthReport(state, rates) {
-  const main = state.cur || 'RUB', ym = ymToday();
-  const list = (state.tx || []).filter((t) => inMonth(t, ym));
-  const isSave = (t) => ENVS.find((e) => e.id === t.env)?.save;
+export function monthReport(state, rates, off = 0) {
+  const main = state.cur || 'RUB', P = period(state, off);
+  const list = (state.tx || []).filter((t) => inPeriod(t, P));
+  const isSave = (t) => catInfo(t.env, state).save;
   const spent = list.filter((t) => !isSave(t)).reduce((a, t) => a + t.sum, 0);
   const saved = list.filter(isSave).reduce((a, t) => a + t.sum, 0);
   const show = [...new Set([main, 'CNY', 'USD', 'RUB'])];
@@ -200,26 +273,27 @@ export function monthReport(state, rates) {
   const by = {};
   list.filter((t) => !isSave(t)).forEach((t) => { by[t.env] = (by[t.env] || 0) + t.sum; });
   const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 5)
-    .map(([id, v]) => { const e = envInfo(id, state); return `${e.ic} ${e.name} — ${fmt(v, main)} (${spent ? Math.round((v / spent) * 100) : 0}%)`; });
-  const month = MONTHS[+ym.slice(5) - 1];
-  if (!list.length) return `📅 За ${month} пока нет записей. Напиши, например: еда 50 ю`;
-  let out = `📅 Итоги за ${month}\n\n💸 Потрачено: ${multi(spent)}`;
-  out += `\n📆 В среднем в день: ${fmt(spent / Math.max(1, dayToday()), main)}`;
+    .map(([id, v]) => { const e = catInfo(id, state); return `${e.ic} ${e.name} — ${fmt(v, main)} (${spent ? Math.round((v / spent) * 100) : 0}%)`; });
+  const head = `за ${P.label}`;
+  if (!list.length) return `📅 Итоги ${head}: пока нет записей. Напиши, например: еда 50 ю`;
+  let out = `📅 Итоги ${head}\n\n💸 Потрачено: ${multi(spent)}`;
+  out += `\n📆 В среднем в день: ${fmt(spent / Math.max(1, P.elapsed), main)}`;
   if (top.length) out += `\n\nКуда ушло больше всего:\n${top.join('\n')}`;
   if (saved) out += `\n\n🐷 Отложено: ${multi(saved)}`;
   return out;
 }
 
 function summary(state, envId, tx) {
-  const e = envInfo(envId, state);
-  const main = state.cur || 'RUB', ym = ymToday();
+  const e = catInfo(envId, state);
+  const main = state.cur || 'RUB', P = period(state);
   const amt = tx.cur && tx.cur !== main ? `${fmt(tx.orig, tx.cur)} (≈ ${fmt(tx.sum, main)})` : fmt(tx.sum, main);
-  const spent = (state.tx || []).filter((t) => t.env === envId && inMonth(t, ym)).reduce((a, t) => a + t.sum, 0);
-  const month = MONTHS[+ym.slice(5) - 1];
-  if (e.save) return `${e.ic} Отложено ${amt} → «${e.name}» 🐷\nЗа ${month} отложено: ${fmt(spent, main)}`;
-  const line = `${e.ic} −${amt} → «${e.name}»`;
-  const plan = state.a?.[envId];
-  if (state.mode === 'simple' || plan == null) return line + `\nЗа ${month} на «${e.name}»: ${fmt(spent, main)}`;
+  const when = tx.date && tx.date !== todayStr(state) ? `\n📅 Записал на ${dateHuman(tx.date, state)}` : '';
+  if (!inPeriod(tx, P)) return `${e.ic} ${e.save ? 'Отложено' : '−'}${e.save ? ' ' : ''}${amt} → «${e.name}»${when} (прошлый месяц)`;
+  const spent = (state.tx || []).filter((t) => t.env === envId && inPeriod(t, P)).reduce((a, t) => a + t.sum, 0);
+  if (e.save) return `${e.ic} Отложено ${amt} → «${e.name}» 🐷${when}\nЗа месяц отложено: ${fmt(spent, main)}`;
+  const line = `${e.ic} −${amt} → «${e.name}»${when}`;
+  const plan = e.amt;
+  if (state.mode === 'simple' || !plan) return line + `\nЗа месяц на «${e.name}»: ${fmt(spent, main)}`;
   const left = plan - spent;
   return line + (left >= 0 ? `\nОсталось в конверте: ${fmt(left, main)}` : `\n😬 Перерасход: ${fmt(-left, main)}`);
 }
@@ -240,11 +314,11 @@ async function onUpdate(update, env, origin) {
     const [, envId] = (q.data || '').split(':');
     const st = store(env, uid);
     const p = await st.takePending();
-    if (!p || !ENVS.some((e) => e.id === envId)) {
+    const state0 = (await st.getState()) || {};
+    if (!p || !getCats(state0).some((c) => c.id === envId)) {
       await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Эта трата уже записана или устарела' });
       return;
     }
-    const state0 = (await st.getState()) || {};
     const tx = makeTx(p, envId, state0, await getRates());
     if (!tx) {
       await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Не смог получить курс валюты, попробуй ещё раз' });
@@ -285,19 +359,16 @@ async function onUpdate(update, env, origin) {
     return;
   }
 
-  const parsed = parseExpense(text);
+  const state = (await st.getState()) || {};
+  const parsed = parseExpense(text, state);
   if (!parsed) {
     await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '🤔 Не нашёл сумму.\n\n' + HELP });
     return;
   }
-  const state = (await st.getState()) || {};
   const envId = detectEnv(parsed.note, state);
   if (!envId) {
     await st.setPending(parsed);
-    const kb = ENVS.map((e) => {
-      const i = envInfo(e.id, state);
-      return { text: `${i.ic} ${i.name}`, callback_data: `e:${e.id}` };
-    });
+    const kb = getCats(state).map((c) => ({ text: `${c.ic} ${c.name}`, callback_data: `e:${c.id}` }));
     const rows = [];
     for (let i = 0; i < kb.length; i += 2) rows.push(kb.slice(i, i + 2));
     await tg(env, 'sendMessage', {
