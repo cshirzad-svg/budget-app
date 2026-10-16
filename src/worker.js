@@ -811,7 +811,7 @@ export default {
       await tg(env, 'setChatMenuButton', {
         menu_button: { type: 'web_app', text: 'Мой бюджет', web_app: { url: origin + '/' } },
       });
-      await tg(env, 'setMyCommands', { commands: [
+      const rc = await tg(env, 'setMyCommands', { commands: [
         { command: 'start', description: '👋 Как пользоваться' },
         { command: 'report', description: '📅 Итоги месяца' },
         { command: 'reminders', description: '⏰ Мои напоминания' },
@@ -819,14 +819,14 @@ export default {
         { command: 'undo', description: '↩️ Отменить последнюю запись' },
         { command: 'help', description: '💡 Примеры, как писать траты' },
       ] });
-      await tg(env, 'setMyDescription', { description:
+      const rd = await tg(env, 'setMyDescription', { description:
         '💌 Бюджет, который ведётся сам.\n\n' +
         'Пиши траты как другу: «кофе 300», «такси 35 ю», «отложил 5к». Можно голосом 🎤\n\n' +
         'Я разложу всё по категориям, посчитаю в любой валюте и покажу, сколько можно потратить сегодня.\n\n' +
         '⏰ Напомню об оплатах, пришлю итоги недели и месяца.\n\nЖми «Старт» 👇' });
-      await tg(env, 'setMyShortDescription', { short_description: '💌 Бюджет в Telegram: пиши траты как другу, а я посчитаю, сколько можно тратить сегодня.' });
+      const rs = await tg(env, 'setMyShortDescription', { short_description: '💌 Бюджет в Telegram: пиши траты как другу, а я посчитаю, сколько можно тратить сегодня.' });
       return new Response(
-        r.ok ? '✅ Готово! Бот подключён к серверу. Можно закрыть страницу и писать боту.' : '❌ Ошибка: ' + JSON.stringify(r),
+        (r.ok ? '✅ Готово! Бот подключён к серверу. Можно закрыть страницу и писать боту.' : '❌ Ошибка: ' + JSON.stringify(r)) + `\n\nКоманды: ${rc.ok ? '✅' : '❌ ' + JSON.stringify(rc)}\nОписание: ${rd.ok ? '✅' : '❌ ' + JSON.stringify(rd)}\nКороткое описание: ${rs.ok ? '✅' : '❌ ' + JSON.stringify(rs)}`,
         { headers: { 'content-type': 'text/plain; charset=utf-8' } },
       );
     }
