@@ -40,6 +40,15 @@ export class UserStore extends DurableObject {
     return [...m.entries()].map(([k, v]) => ({ uid: +k.slice(2), ...v }));
   }
   async getAdmin() { return (await this.ctx.storage.get('admin')) || null; }
+  async regGet(uid) { return (await this.ctx.storage.get('u:' + uid)) || null; }
+  async meta(k, v) { if (v === undefined) return (await this.ctx.storage.get('m:' + k)) ?? null; if (v === null) await this.ctx.storage.delete('m:' + k); else await this.ctx.storage.put('m:' + k, v); return v; }
+  /* общий бюджет */
+  async getLink() { return (await this.ctx.storage.get('link')) || null; }
+  async setLink(owner) { if (owner) await this.ctx.storage.put('link', owner); else await this.ctx.storage.delete('link'); }
+  async members(patch) { let m = (await this.ctx.storage.get('members')) || []; if (patch) { m = patch(m); await this.ctx.storage.put('members', m); } return m; }
+  async getMembers() { return (await this.ctx.storage.get('members')) || []; }
+  async setMembers(m) { await this.ctx.storage.put('members', m); return m; }
+  async invite(code) { if (code) await this.ctx.storage.put('invite', code); return (await this.ctx.storage.get('invite')) || null; }
   async claimAdmin(id) {
     const a = await this.ctx.storage.get('admin');
     if (a) return a;
@@ -88,11 +97,11 @@ export class UserStore extends DurableObject {
     await this.ctx.storage.put('state', s);
     return s;
   }
-  async undo() {
+  async undo(by) {
     const s = (await this.ctx.storage.get('state')) || {};
     const list = s.tx || [];
     let idx = -1;
-    for (let i = list.length - 1; i >= 0; i--) if (list[i].src === 'bot') { idx = i; break; }
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].src === 'bot' && (!by || !list[i].by || list[i].by === by)) { idx = i; break; }
     if (idx < 0) return null;
     const [removed] = list.splice(idx, 1);
     s.tx = list;
@@ -498,6 +507,13 @@ const hm = (t) => { const [h, m] = String(t || '').split(':').map(Number); retur
 const APPKB = (env) => (env.ORIGIN ? [[{ text: '📊 Открыть бюджет', web_app: { url: env.ORIGIN } }]] : []);
 async function runSchedule(env) {
   const reg = store(env, '__registry__');
+  try {
+    if ((await reg.meta('whv')) !== 2 && env.ORIGIN) {
+      const o = env.ORIGIN.replace(/\/$/, '');
+      const w = await tg(env, 'setWebhook', { url: o + '/tg', secret_token: await webhookSecret(env.BOT_TOKEN), allowed_updates: ['message', 'callback_query', 'pre_checkout_query'] });
+      if (w.ok) await reg.meta('whv', 2);
+    }
+  } catch (e) { console.error('whv', e); }
   const users = await reg.regList();
   const now = Date.now();
   let rates = null;
@@ -535,7 +551,7 @@ async function runSchedule(env) {
     const wk = ymd(new Date(local.getTime() - local.getUTCDay() * 864e5));
     if (wOn && local.getUTCDay() === 0 && mins >= 20 * 60 && u.last_w !== wk) {
       try {
-        const st = (await store(env, u.uid).getState()) || {};
+        const st = (await store(env, u.link || u.uid).getState()) || {};
         const t = weekText(st);
         if (t) await tg(env, 'sendMessage', { chat_id: u.uid, parse_mode: 'HTML', text: t, reply_markup: { inline_keyboard: APPKB(env) } });
         await reg.regUpdate(u.uid, { last_w: wk });
@@ -545,7 +561,7 @@ async function runSchedule(env) {
       try {
         const st0 = { start: u.start || 1 };
         if (local.getUTCDate() === Math.min(st0.start, 28) && u.last_mo !== today) {
-          const st = (await store(env, u.uid).getState()) || {};
+          const st = (await store(env, u.link || u.uid).getState()) || {};
           rates = rates || (await getRates());
           const t = monthStartText(st, rates);
           if (t) await tg(env, 'sendMessage', { chat_id: u.uid, parse_mode: 'HTML', text: t, reply_markup: { inline_keyboard: APPKB(env) } });
@@ -558,7 +574,7 @@ async function runSchedule(env) {
       const at = hm(n[k + 't']);
       if (!n[k] || at == null || mins < at || mins >= at + 60 || u['last_' + k] === today) continue;
       try {
-        const state = (await store(env, u.uid).getState()) || {};
+        const state = (await store(env, u.link || u.uid).getState()) || {};
         let body;
         if (k === 'm') body = { text: morningText(state), reply_markup: { inline_keyboard: [[{ text: '📊 Открыть бюджет', web_app: { url: env.ORIGIN || '' } }]] } };
         else {
@@ -777,6 +793,52 @@ export function streakOf(state) {
   return n;
 }
 
+/* ---------- общий бюджет и доступ ---------- */
+async function userStore(env, uid, name) {
+  const own = store(env, uid);
+  const link = await own.getLink();
+  const b = link ? store(env, link) : own;
+  return {
+    owner: link || uid, own, b,
+    getState: () => b.getState(), putState: (a, c) => b.putState(a, c), addTx: (t) => b.addTx({ ...t, by: t.by || uid, byName: t.byName || name || '' }),
+    undo: () => b.undo(uid), srvGet: () => b.srvGet(), srvPatch: (x) => b.srvPatch(x), aiTick: (d, m) => b.aiTick(d, m),
+    remAdd: (x) => own.remAdd(x), remList: () => own.remList(), remDel: (i) => own.remDel(i), remDue: (n) => own.remDue(n), remSent: (i, d) => own.remSent(i, d),
+    setPending: (x) => own.setPending(x), takePending: () => own.takePending(), seenUpd: (i) => own.seenUpd(i),
+  };
+}
+const TRIAL_DAYS = 7;
+async function accessOf(env, owner) {
+  const reg = store(env, '__registry__');
+  const [admin, u] = await Promise.all([reg.getAdmin(), reg.regGet(owner)]);
+  if (admin === owner || (u && u.paid)) return { paid: true, active: true };
+  let te = u && u.trialEnd;
+  if (!te) { te = Date.now() + TRIAL_DAYS * 864e5; await reg.regUpdate(owner, { trialEnd: te }); }
+  return { paid: false, trialEnd: te, active: Date.now() < te };
+}
+const priceStars = (env) => Math.max(1, parseInt(env.PRICE_STARS || '600', 10) || 600);
+const invoiceBody = (env, owner) => ({ title: 'Бюджет в конвертах — навсегда', description: 'Полный доступ к боту и приложению без ограничений: траты, конверты, ИИ-повар, напоминания, общий бюджет на двоих.', payload: 'full:' + owner, currency: 'XTR', prices: [{ label: 'Полный доступ', amount: priceStars(env) }], provider_token: '' });
+async function sendPaywall(env, chat, owner, acc) {
+  await tg(env, 'sendMessage', { chat_id: chat, text: `🔒 Пробный период закончился${acc && acc.trialEnd ? ' ' + new Date(acc.trialEnd).toLocaleDateString('ru-RU') : ''}.\n\nВсе твои записи сохранены. Чтобы продолжить вести бюджет, открой полный доступ навсегда — один раз, без подписки 👇` });
+  await tg(env, 'sendInvoice', { chat_id: chat, ...invoiceBody(env, owner) });
+}
+async function botName(env) {
+  const reg = store(env, '__registry__');
+  let n = await reg.meta('botname');
+  if (!n) { const me = await tg(env, 'getMe', {}); if (me.ok) { n = me.result.username; await reg.meta('botname', n); } }
+  return n || 'konverty_budget_bot';
+}
+async function makeInvite(env, owner) {
+  const own = store(env, owner);
+  let code = await own.invite();
+  if (!code) { code = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 10); await own.invite(code); await store(env, '__registry__').meta('inv:' + code, owner); }
+  return { code, link: `https://t.me/${await botName(env)}?start=join_${code}` };
+}
+async function unlinkPartner(env, owner, pid) {
+  await store(env, owner).setMembers((await store(env, owner).getMembers()).filter((m) => m.id !== pid));
+  await store(env, pid).setLink(null);
+  await store(env, '__registry__').regUpdate(pid, { link: null });
+}
+
 async function transcribe(env, fileId) {
   if (!env.AI) return null;
   try {
@@ -810,16 +872,39 @@ async function foodMenu(env, st, state, chat, request, origin) {
 }
 
 async function onUpdate(update, env, origin) {
+  if (update.pre_checkout_query) {
+    const pq = update.pre_checkout_query;
+    await tg(env, 'answerPreCheckoutQuery', { pre_checkout_query_id: pq.id, ok: /^full:\d+$/.test(pq.invoice_payload || '') });
+    return;
+  }
+  if (update.callback_query && /^j[yn]:/.test(update.callback_query.data || '')) {
+    const q = update.callback_query, uid = q.from.id, code = q.data.slice(3), reg = store(env, '__registry__');
+    const done = (text) => tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text });
+    await tg(env, 'answerCallbackQuery', { callback_query_id: q.id });
+    if (q.data.startsWith('jn:')) { await done('Ок, остаёмся каждый со своим бюджетом.'); return; }
+    const owner = await reg.meta('inv:' + code);
+    if (!owner || owner === uid) { await done('Ссылка устарела.'); return; }
+    const mem = await store(env, owner).getMembers();
+    if (mem.length >= 1 && !mem.some((m) => m.id === uid)) { await done('😕 В этом бюджете уже двое. Попроси владельца убрать старого участника.'); return; }
+    if (!mem.some((m) => m.id === uid)) await store(env, owner).setMembers([...mem, { id: uid, name: q.from.first_name || '', user: q.from.username || '' }]);
+    await store(env, uid).setLink(owner);
+    await reg.regUpdate(uid, { link: owner });
+    const ou = await reg.regGet(owner);
+    await done(`👫 Готово! Теперь у вас с ${(ou && ou.name) || 'партнёром'} общий бюджет. Пиши траты как обычно — они попадут в общий.`);
+    await tg(env, 'sendMessage', { chat_id: uid, text: 'Открой приложение, чтобы увидеть общий бюджет 👇', reply_markup: appButton(origin) });
+    await tg(env, 'sendMessage', { chat_id: owner, text: `👫 ${q.from.first_name || 'Партнёр'} присоединился к твоему бюджету! Теперь вы видите траты друг друга.` });
+    return;
+  }
   if (update.callback_query && update.callback_query.data === 'ns') {
     const q = update.callback_query;
-    try { const st0 = store(env, q.from.id), s0 = (await st0.getState()) || {}; const ns = new Set(((s0.srv || {}).ns || [])); ns.add(todayStr(s0)); await st0.srvPatch({ ns: [...ns].slice(-120) }); } catch (e) { console.error('ns', e); }
+    try { const st0 = await userStore(env, q.from.id), s0 = (await st0.getState()) || {}; const ns = new Set(((s0.srv || {}).ns || [])); ns.add(todayStr(s0)); await st0.srvPatch({ ns: [...ns].slice(-120) }); } catch (e) { console.error('ns', e); }
     await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Засчитано 🧘' });
     await tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text: '🧘 День без трат! Так держать 💪', reply_markup: appButton(origin) });
     return;
   }
   if (update.callback_query && /^[rs]:/.test(update.callback_query.data || '')) {
     const q = update.callback_query, uid = q.from.id, [kind, act, id] = q.data.split(':');
-    const st = store(env, uid), reg = store(env, '__registry__');
+    const st = await userStore(env, uid, q.from.first_name), reg = store(env, '__registry__');
     const edit = (text, kb) => tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text, reply_markup: kb || appButton(origin) });
     const state0 = (await st.getState()) || {};
     if (kind === 'r') {
@@ -855,7 +940,7 @@ async function onUpdate(update, env, origin) {
     return;
   }
   if (update.callback_query && /^m:/.test(update.callback_query.data || '')) {
-    const q = update.callback_query, st = store(env, q.from.id), state = (await st.getState()) || {};
+    const q = update.callback_query, st = await userStore(env, q.from.id, q.from.first_name), state = (await st.getState()) || {};
     await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: '👨‍🍳 Готовлю…' });
     const last = (state.srv && state.srv.menuAI && state.srv.menuAI.q) || '';
     await foodMenu(env, st, state, q.from.id, q.data === 'm:cheap' ? (last + ', подешевле, бюджетные продукты').replace(/^, /, '') : last, origin);
@@ -873,7 +958,7 @@ async function onUpdate(update, env, origin) {
     const q = update.callback_query;
     const uid = q.from.id;
     const [, envId] = (q.data || '').split(':');
-    const st = store(env, uid);
+    const st = await userStore(env, uid, q.from.first_name);
     const p = await st.takePending();
     const state0 = (await st.getState()) || {};
     if (!p || !getCats(state0).some((c) => c.id === envId)) {
@@ -897,9 +982,38 @@ async function onUpdate(update, env, origin) {
   const msg = update.message;
   if (!msg || msg.chat.type !== 'private') return;
   const uid = msg.from.id, chat = msg.chat.id;
-  const st = store(env, uid);
+  const st = await userStore(env, uid, msg.from.first_name);
   if (update.update_id && (await st.seenUpd(update.update_id))) return;
   let text = (msg.text || msg.caption || '').trim();
+  if (msg.successful_payment) {
+    const sp = msg.successful_payment, owner = +String(sp.invoice_payload || '').split(':')[1] || st.owner;
+    const reg0 = store(env, '__registry__');
+    await reg0.regUpdate(owner, { paid: true, paidAt: Date.now(), charge: sp.telegram_payment_charge_id, stars: sp.total_amount, payer: uid });
+    await tg(env, 'sendMessage', { chat_id: chat, text: '💎 Спасибо! Полный доступ открыт навсегда. Пиши траты как раньше 🙂', reply_markup: appButton(origin) });
+    const adm = await reg0.getAdmin();
+    if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `💰 Новая оплата: ${msg.from.first_name || ''}${msg.from.username ? ' @' + msg.from.username : ''} — ⭐ ${sp.total_amount}` });
+    return;
+  }
+  if (/^\/start join_/.test(text)) {
+    const code = text.split('join_')[1].trim(), owner = await store(env, '__registry__').meta('inv:' + code);
+    if (!owner) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Ссылка-приглашение устарела. Попроси новую.' }); return; }
+    if (owner === uid) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Это твоя собственная ссылка 🙂 Отправь её партнёру.' }); return; }
+    const ou = await store(env, '__registry__').regGet(owner);
+    await tg(env, 'sendMessage', { chat_id: chat, text: `👫 ${(ou && ou.name) || 'Тебя'} приглашает вести общий бюджет.\n\nВы будете видеть траты друг друга, конверты и цели. Твой личный бюджет (если был) скроется, пока ты в общем.`, reply_markup: { inline_keyboard: [[{ text: '✅ Присоединиться', callback_data: 'jy:' + code }], [{ text: 'Нет, спасибо', callback_data: 'jn:' + code }]] } });
+    return;
+  }
+  if (/^\/?(paysupport|terms|поддержка)/i.test(text)) {
+    if (/^\/?terms/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: `📄 Условия: 7 дней бесплатно, дальше полный доступ навсегда за ⭐ ${priceStars(env)} (разовый платёж через Telegram Stars). Если что-то не работает — напиши «поддержка» и опиши проблему, ответим и при необходимости вернём оплату.` }); return; }
+    const adm = await store(env, '__registry__').getAdmin(), body = text.replace(/^\/?(paysupport|поддержка)\s*/i, '');
+    if (!body) { await tg(env, 'sendMessage', { chat_id: chat, text: '🛟 Опиши проблему одним сообщением, начиная со слова «поддержка». Например: «поддержка не проходит оплата».' }); return; }
+    if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `🛟 Поддержка от ${msg.from.first_name || ''}${msg.from.username ? ' @' + msg.from.username : ''} (id ${uid}):\n\n${body.slice(0, 1500)}` });
+    await tg(env, 'sendMessage', { chat_id: chat, text: '🛟 Передал создателю, он ответит здесь же.' });
+    return;
+  }
+  if (!/^\/(start|help|admin|stats|grant)/.test(text)) {
+    const acc = await accessOf(env, st.owner);
+    if (!acc.active) { await sendPaywall(env, chat, st.owner, acc); return; }
+  }
   if (msg.photo && !/\d/.test(text)) {
     const state = (await st.getState()) || {};
     if (!env.AI) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Фото чеков пока не понимаю. Напиши сумму текстом: «продукты 1500».' }); return; }
@@ -1011,14 +1125,21 @@ async function onUpdate(update, env, origin) {
     await tg(env, 'sendMessage', { chat_id: chat, text: a === uid ? '👑 Ты админ: сюда будут приходить отзывы. /stats — статистика.' : 'Админ уже назначен.' });
     return;
   }
+  if (/^\/grant\s+\d+/.test(text)) {
+    if ((await reg.getAdmin()) !== uid) return;
+    const gid = +text.split(/\s+/)[1];
+    await reg.regUpdate(gid, { paid: true, paidAt: Date.now(), gift: true });
+    await tg(env, 'sendMessage', { chat_id: chat, text: `💎 Выдал полный доступ пользователю ${gid}.` });
+    return;
+  }
   if (text === '/stats') {
     if ((await reg.getAdmin()) !== uid) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Команда только для админа.' }); return; }
     const list = await reg.regList(), wk = Date.now() - 7 * 864e5, day = Date.now() - 864e5;
     for (const u of list.slice(0, 300)) { try { const s0 = (await store(env, u.uid).getState()) || {}; u.n = (s0.tx || []).length; u.onb = !!s0.onboarded || u.onb; } catch (e) { /* пропускаем */ } }
     const c = (f) => list.filter(f).length;
     await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text:
-      `📊 <b>Статистика</b>\n\n👥 Всего зашли: ${list.length}\n🧭 Прошли настройку: ${c((u) => u.onb)}\n✍️ Записали хотя бы 1 трату: ${c((u) => u.n > 0)}\n🔥 Активны за сутки: ${c((u) => u.seen > day)}\n📅 Активны за неделю: ${c((u) => u.seen > wk)}\n🔔 С напоминаниями: ${c((u) => u.notif && (u.notif.m || u.notif.e))}\n\n` +
-      list.sort((a, b) => (b.seen || 0) - (a.seen || 0)).slice(0, 15).map((u) => `• ${u.name || u.uid}${u.user ? ' @' + u.user : ''} — ${u.n || 0} записей`).join('\n') });
+      `📊 <b>Статистика</b>\n\n👥 Всего зашли: ${list.length}\n🧭 Прошли настройку: ${c((u) => u.onb)}\n✍️ Записали хотя бы 1 трату: ${c((u) => u.n > 0)}\n🔥 Активны за сутки: ${c((u) => u.seen > day)}\n📅 Активны за неделю: ${c((u) => u.seen > wk)}\n🔔 С напоминаниями: ${c((u) => u.notif && (u.notif.m || u.notif.e))}\n💎 Оплатили: ${c((u) => u.paid && !u.gift)}\n👫 В общих бюджетах: ${c((u) => u.link)}\n\n` +
+      list.sort((a, b) => (b.seen || 0) - (a.seen || 0)).slice(0, 15).map((u) => `• ${u.name || u.uid}${u.user ? ' @' + u.user : ''} — ${u.n || 0} записей${u.paid ? ' 💎' : ''} · id ${u.uid}`).join('\n') });
     return;
   }
   if (text.startsWith('/undo')) {
@@ -1114,7 +1235,7 @@ export default {
       const r = await tg(env, 'setWebhook', {
         url: origin + '/tg',
         secret_token: await webhookSecret(env.BOT_TOKEN),
-        allowed_updates: ['message', 'callback_query'],
+        allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
         drop_pending_updates: true,
       });
       await tg(env, 'setChatMenuButton', {
@@ -1162,7 +1283,7 @@ export default {
     if (url.pathname === '/api/ai' && request.method === 'POST') {
       const user = await checkInitData(request.headers.get('X-Init-Data'), env.BOT_TOKEN);
       if (!user) return json({ ok: false, error: 'unauthorized' }, 401);
-      const st = store(env, user.id), state = (await st.getState()) || {};
+      const st = await userStore(env, user.id, user.first_name), state = (await st.getState()) || {};
       const b = await request.json().catch(() => ({}));
       if (b.act === 'prefs') return json({ ok: true, srv: await st.srvPatch({ prefs: (Array.isArray(b.prefs) ? b.prefs : []).map((x) => String(x).trim().toLowerCase()).filter(Boolean).slice(0, 20) }) });
       if (b.act === 'clear') return json({ ok: true, srv: await st.srvPatch({ menuAI: null }) });
@@ -1181,10 +1302,46 @@ export default {
       return json({ ok: false }, 400);
     }
 
+    if (url.pathname === '/api/team' && request.method === 'POST') {
+      const user = await checkInitData(request.headers.get('X-Init-Data'), env.BOT_TOKEN);
+      if (!user) return json({ ok: false, error: 'unauthorized' }, 401);
+      const st = await userStore(env, user.id, user.first_name);
+      const b = await request.json().catch(() => ({}));
+      if (b.act === 'invite') {
+        if (st.owner !== user.id) return json({ ok: false, error: 'not_owner' });
+        return json({ ok: true, ...(await makeInvite(env, user.id)) });
+      }
+      if (b.act === 'remove' && st.owner === user.id) {
+        const pid = +b.id; await unlinkPartner(env, user.id, pid);
+        await tg(env, 'sendMessage', { chat_id: pid, text: '👋 Тебя убрали из общего бюджета. Теперь у тебя снова свой личный бюджет.' });
+        return json({ ok: true });
+      }
+      if (b.act === 'leave' && st.owner !== user.id) {
+        await unlinkPartner(env, st.owner, user.id);
+        await tg(env, 'sendMessage', { chat_id: st.owner, text: `👋 ${user.first_name || 'Партнёр'} вышел из общего бюджета.` });
+        return json({ ok: true });
+      }
+      if (b.act === 'invoice') {
+        const r2 = await tg(env, 'createInvoiceLink', invoiceBody(env, st.owner));
+        return json({ ok: !!r2.ok, link: r2.result || null });
+      }
+      if (b.act === 'pic' && typeof b.png === 'string' && b.png.length < 6e6) {
+        const bin = Uint8Array.from(atob(b.png.replace(/^data:image\/\w+;base64,/, '')), (c) => c.charCodeAt(0));
+        const fd = new FormData();
+        fd.append('chat_id', String(user.id));
+        fd.append('caption', '📸 Твои итоги. Перешли друзьям или выложи в сторис 🙂');
+        fd.append('photo', new Blob([bin], { type: 'image/png' }), 'itogi.png');
+        const r3 = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendPhoto`, { method: 'POST', body: fd });
+        const j3 = await r3.json().catch(() => ({}));
+        return json({ ok: !!j3.ok });
+      }
+      return json({ ok: false }, 400);
+    }
+
     if (url.pathname === '/api/export' && request.method === 'POST') {
       const user = await checkInitData(request.headers.get('X-Init-Data'), env.BOT_TOKEN);
       if (!user) return json({ ok: false, error: 'unauthorized' }, 401);
-      const state = (await store(env, user.id).getState()) || {};
+      const state = (await (await userStore(env, user.id)).getState()) || {};
       const fd = new FormData();
       fd.append('chat_id', String(user.id));
       fd.append('caption', `📤 Все твои траты (${(state.tx || []).length} шт.). Открывается в Excel и Google Таблицах.`);
@@ -1197,17 +1354,23 @@ export default {
     if (url.pathname === '/api/state') {
       const user = await checkInitData(request.headers.get('X-Init-Data'), env.BOT_TOKEN);
       if (!user) return json({ ok: false, error: 'unauthorized' }, 401);
-      const st = store(env, user.id);
+      const st = await userStore(env, user.id, user.first_name);
       const reg = store(env, '__registry__');
+      const info = async () => {
+        const acc = await accessOf(env, st.owner);
+        const mem = await store(env, st.owner).getMembers();
+        const ou = await reg.regGet(st.owner);
+        return { ...acc, price: priceStars(env), me: user.id, owner: st.owner, isOwner: st.owner === user.id, members: [{ id: st.owner, name: (ou && ou.name) || '' }, ...mem.map((m) => ({ id: m.id, name: m.name }))] };
+      };
       if (request.method === 'GET') {
         await reg.regUpdate(user.id, { seen: Date.now(), name: user.first_name || '', user: user.username || '' });
-        return json({ ok: true, state: await st.getState() });
+        return json({ ok: true, state: await st.getState(), access: await info() });
       }
       if (request.method === 'PUT') {
         const body = await request.json();
         if (!body || typeof body.state !== 'object') return json({ ok: false }, 400);
         const s = await st.putState(body.state, Array.isArray(body.deleted) ? body.deleted : []);
-        await reg.regUpdate(user.id, { seen: Date.now(), tz: s.tz, notif: s.notif, subs: (s.subs || []).slice(0, 50), start: s.start || 1, onb: !!s.onboarded, n: (s.tx || []).length, name: user.first_name || '', user: user.username || '' });
+        await reg.regUpdate(user.id, { seen: Date.now(), tz: s.tz, notif: s.notif, subs: st.owner === user.id ? (s.subs || []).slice(0, 50) : [], start: s.start || 1, onb: !!s.onboarded, n: (s.tx || []).length, name: user.first_name || '', user: user.username || '' });
         return json({ ok: true, state: s });
       }
       return json({ ok: false }, 405);

@@ -17,6 +17,7 @@ new_sqlite_classes = ["UserStore"]
 
 [vars]
 ORIGIN = "https://konverty-budget.cshirzad.workers.dev/"
+PRICE_STARS = "600"
 
 [triggers]
 crons = ["*/5 * * * *"]

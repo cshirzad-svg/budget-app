@@ -428,6 +428,21 @@ input[type=number]{-moz-appearance:textfield}
 .bgrid div i{display:block;font-style:normal;font-size:28px;margin-bottom:4px}
 .bgrid div b{display:block;font-size:12px}
 .bgrid div.lock{opacity:.4;filter:grayscale(1)}
+
+/* ---- v7: доступ, общий бюджет, итоги ---- */
+.pay{position:fixed;inset:0;z-index:55;background:var(--bg);overflow-y:auto;display:flex;align-items:flex-start;justify-content:center}
+.pay-in{max-width:480px;width:100%;padding:36px 20px 40px;display:flex;flex-direction:column;gap:14px}
+.pay .e{font-size:56px;text-align:center}
+.pay h2{font-family:var(--display);font-weight:700;font-size:24px;margin:0;text-align:center;text-wrap:balance}
+.pay p{margin:0;color:var(--muted);text-align:center}
+.pay ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.pay li{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px}
+.pay .price{font-family:var(--display);font-weight:700;font-size:30px;text-align:center}
+.acc-row{display:flex;align-items:center;gap:10px;font-size:14px}
+.acc-row .badge{background:var(--accent-soft);color:var(--accent);font-weight:700;border-radius:99px;padding:4px 10px;font-size:13px}
+.team-link{display:flex;gap:6px}
+.team-link input{flex:1;min-width:0;font-size:13px}
+.who{font-size:11px;color:var(--accent);font-weight:600}
 /* пустой старт */
 .kpi .chip:not(.good):not(.bad){background:var(--soft);color:var(--muted)}
 .kpi[data-help]{cursor:pointer}.qi{opacity:.5;font-size:11px}
@@ -511,6 +526,7 @@ input[type=number]{-moz-appearance:textfield}
       <h2>📜 Прошлые месяцы<button type="button" class="help" data-help="hist" aria-label="Что это?">?</button></h2>
       <div class="chart-box" style="height:170px"><canvas id="c-hist" aria-label="Траты по месяцам"></canvas></div>
       <div id="histList"></div>
+      <button type="button" class="btn ghost" id="sharePic" style="margin-top:10px">📸 Поделиться итогами месяца</button>
     </div>
     <div class="card">
       <h2>🧮 Сводная таблица<button type="button" class="help" data-help="table" aria-label="Что это?">?</button></h2>
@@ -637,6 +653,15 @@ input[type=number]{-moz-appearance:textfield}
       <div class="row"><label for="startDay">Месяц начинается с</label><select id="startDay" aria-label="День начала месяца"></select></div>
       <p class="hint">Траты в других валютах пересчитываются по курсу сами. Начало месяца удобно поставить на день зарплаты.</p>
     </div>
+    <div class="card" id="accCard" hidden>
+      <h2>💎 Доступ</h2>
+      <div class="acc-row"><span id="accTxt" style="flex:1"></span><span class="badge" id="accBadge"></span></div>
+      <button type="button" class="btn" id="accPay" hidden></button>
+    </div>
+    <div class="card" id="teamCard" hidden>
+      <h2>👫 Общий бюджет<button type="button" class="help" data-help="team" aria-label="Что это?">?</button></h2>
+      <div id="teamBody"></div>
+    </div>
     <div class="card">
       <h2>🔔 Напоминания</h2>
       <p class="hint">Бот напишет тебе в Telegram в выбранное время.</p>
@@ -702,7 +727,7 @@ function boot(){
   if(inTG){try{tg.ready();tg.expand();document.documentElement.setAttribute('data-theme',tg.colorScheme==='dark'?'dark':'light');
     try{tg.setHeaderColor(tg.colorScheme==='dark'?'#12151d':'#f3f5f9');tg.setBackgroundColor(tg.colorScheme==='dark'?'#12151d':'#f3f5f9')}catch(e){}}catch(e){}}
   const local=()=>parseJ(lsGet(SKEY))||parseJ(lsGet(OLDKEY));
-  const fromServer=useServer?api('GET').then(r=>r&&r.state?r.state:null).catch(()=>null):Promise.resolve(null);
+  const fromServer=useServer?api('GET').then(r=>{if(r&&r.access)window.ACCESS=r.access;return r&&r.state?r.state:null}).catch(()=>null):Promise.resolve(null);
   fromServer.then(st=>{if(st)return main(st);
     cloud.get(str=>main(parseJ(str)||local()))});
 }
@@ -904,6 +929,7 @@ function render(){
   renderHistory();renderTable();
   try{renderDaily(P,txP)}catch(e){console.error(e)}
   renderSubs();
+  try{renderAccess();payOverlay()}catch(e){console.error(e)}
   try{renderGame()}catch(e){console.error(e)}
   renderTx(P,txP);
   save();
@@ -1110,6 +1136,73 @@ function renderGame(){
 }
 $('gameCard').addEventListener('click',e=>{if(e.target.closest('.help'))return;const {st,ids}=earned();
   sheet(`🏅 Значки: ${ids.length} из ${BADGES.length}`,`🔥 Серия: ${st} дн. Записывай траты каждый день или жми «Без трат» в вечернем сообщении бота.<div class="bgrid" style="margin-top:12px">${BADGES.map(b=>`<div class="${ids.includes(b[0])?'':'lock'}"><i>${b[1]}</i><b>${b[2]}</b>${b[3]}</div>`).join('')}</div>`)});
+
+/* ---------- доступ, общий бюджет, итоги ---------- */
+function payOverlay(){
+  if(!useServer||!window.ACCESS||ACCESS.active||document.getElementById('pay'))return;
+  const d=document.createElement('div');d.className='pay';d.id='pay';
+  d.innerHTML=`<div class="pay-in"><div class="e">💌</div><h2>Пробный период закончился</h2><p>Все твои записи на месте. Открой полный доступ, чтобы продолжить.</p>
+  <ul><li>✍️ Траты в чат, голосом и по фото чека</li><li>✉️ Конверты, цели, «можно сегодня»</li><li>👨‍🍳 ИИ-повар и список покупок под бюджет</li><li>⏰ Напоминания, отчёты недели и месяца</li><li>👫 Общий бюджет на двоих</li></ul>
+  <div class="price">⭐ ${ACCESS.price||600}</div><p>Один раз и навсегда, без подписки. Оплата звёздами Telegram.</p>
+  <button type="button" class="btn" id="payGo">💎 Открыть полный доступ</button></div>`;
+  document.body.appendChild(d);d.querySelector('#payGo').onclick=buyFull;
+}
+function buyFull(){
+  fetch('/api/team',{method:'POST',headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:JSON.stringify({act:'invoice'})}).then(r=>r.json()).then(j=>{
+    if(!j.ok||!j.link){toast('😕 Не получилось открыть оплату');return}
+    tg.openInvoice(j.link,st=>{if(st==='paid'){ACCESS.paid=ACCESS.active=true;const p=document.getElementById('pay');if(p)p.remove();renderAccess();burst(['💎','🎉','✨','🥳'],null,null,30);toast('💎 Спасибо! Полный доступ открыт навсегда')}})
+  }).catch(()=>toast('😕 Нет связи'))}
+function teamCall(body){return fetch('/api/team',{method:'POST',headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(()=>({ok:false}))}
+function renderAccess(){
+  const A=window.ACCESS;$('accCard').hidden=$('teamCard').hidden=!(useServer&&A);if(!A)return;
+  if(A.paid){$('accTxt').textContent='Полный доступ навсегда. Спасибо, что ты с нами!';$('accBadge').textContent='💎 Полный';$('accPay').hidden=true}
+  else{const left=Math.max(0,Math.ceil((A.trialEnd-Date.now())/864e5));$('accTxt').textContent=`Пробный период: осталось ${left} ${left===1?'день':left>=2&&left<=4?'дня':'дней'}.`;$('accBadge').textContent='🎁 Пробный';
+    $('accPay').hidden=false;$('accPay').textContent=`💎 Открыть навсегда за ⭐ ${A.price||600}`}
+  const others=(A.members||[]).filter(m=>m.id!==A.me);
+  if(A.isOwner&&!others.length)$('teamBody').innerHTML=`<p class="hint">Пригласи партнёра, и вы будете вести один бюджет на двоих. Каждый пишет траты своему боту, всё сходится здесь.</p><button type="button" class="btn" id="tmInv">💌 Пригласить партнёра</button><div id="tmLink"></div>`;
+  else if(A.isOwner)$('teamBody').innerHTML=`<p>👫 Вместе с: <b>${others.map(m=>esc(m.name||'партнёр')).join(', ')}</b></p><button type="button" class="btn danger" id="tmRm" data-id="${others[0].id}">Убрать из бюджета</button>`;
+  else $('teamBody').innerHTML=`<p>👫 Ты в общем бюджете с <b>${esc((A.members.find(m=>m.id===A.owner)||{}).name||'партнёром')}</b>.</p><button type="button" class="btn danger" id="tmLeave">Выйти из общего бюджета</button>`;
+}
+$('accPay').addEventListener('click',buyFull);
+$('teamBody').addEventListener('click',e=>{
+  if(e.target.closest('#tmInv')){teamCall({act:'invite'}).then(j=>{if(!j.ok){toast('😕 Не получилось');return}
+    const msg='Давай вести общий бюджет в Telegram 💌 Жми ссылку:';
+    $('tmLink').innerHTML=`<div class="team-link" style="margin-top:8px"><input type="text" readonly value="${j.link}"><button type="button" class="btn ghost" id="tmCopy" style="width:auto">📋</button></div><button type="button" class="btn" id="tmSend" style="margin-top:8px">📨 Отправить в Telegram</button><p class="hint">Партнёр нажмёт ссылку, подтвердит, и у вас будет общий бюджет.</p>`;
+    $('tmSend').onclick=()=>{try{tg.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(j.link)+'&text='+encodeURIComponent(msg))}catch(x){}};
+    $('tmCopy').onclick=()=>{try{navigator.clipboard.writeText(j.link);toast('📋 Ссылка скопирована')}catch(x){}}})}
+  const rm=e.target.closest('#tmRm,#tmLeave');if(rm){
+    if(!rm.classList.contains('armed')){rm.classList.add('armed');rm.textContent='Точно? Нажми ещё раз';return}
+    teamCall(rm.id==='tmRm'?{act:'remove',id:+rm.dataset.id}:{act:'leave'}).then(j=>{if(!j.ok){toast('😕 Не получилось');return}toast('👋 Готово. Перезагружаю…');setTimeout(()=>location.reload(),900)})}
+});
+/* картинка итогов месяца */
+function shareMonth(){
+  if(!useServer){toast('Работает внутри Telegram');return}
+  const P=periodOf(OFF),isS=t=>byId(t.env).save,list=S.tx.filter(t=>inP(t,P)),sp=list.filter(t=>!isS(t)),spent=sp.reduce((a,t)=>a+t.sum,0),saved=list.filter(isS).reduce((a,t)=>a+t.sum,0);
+  if(!list.length){toast('В этом месяце пока нет записей');return}
+  const by={};sp.forEach(t=>by[t.env]=(by[t.env]||0)+t.sum);const top=Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  const plan=spendCats().reduce((a,e)=>a+(e.amt||0),0);
+  const W=1080,H=1350,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,W,H);g.addColorStop(0,'#8f7cf2');g.addColorStop(1,'#2fb3a3');x.fillStyle=g;x.fillRect(0,0,W,H);
+  const rr=(X,Y,w,h,r0,f)=>{x.beginPath();if(x.roundRect)x.roundRect(X,Y,w,h,r0);else x.rect(X,Y,w,h);x.fillStyle=f;x.fill()};
+  const F='"Onest","Segoe UI",system-ui,sans-serif';
+  x.fillStyle='#fff';x.font=`700 64px ${F}`;x.fillText('💌 Мой '+P.label.replace(/\s\d{4}$/,''),70,140);
+  x.font=`500 34px ${F}`;x.globalAlpha=.85;x.fillText('итоги месяца',74,195);x.globalAlpha=1;
+  rr(60,250,W-120,330,40,'rgba(255,255,255,.95)');
+  x.fillStyle='#2a2440';x.font=`500 34px ${F}`;x.fillText('💸 Потрачено',110,330);x.font=`800 84px ${F}`;x.fillText(fmt(spent),110,430);
+  x.font=`500 32px ${F}`;x.fillStyle='#4b4566';
+  const line2=plan&&S.mode!=='simple'?(spent<=plan*P.elapsed/P.days?`✅ В рамках плана · сэкономлено ${fmt(Math.max(0,plan*P.elapsed/P.days-spent))}`:`План ${fmt(plan)} — есть куда стремиться 💪`):`📆 В среднем ${fmt(spent/Math.max(1,P.elapsed))} в день`;
+  x.fillText(line2,110,500);if(saved){x.fillText(`🐷 Отложено ${fmt(saved)}`,110,550)}
+  rr(60,620,W-120,520,40,'rgba(255,255,255,.95)');x.fillStyle='#2a2440';x.font=`700 38px ${F}`;x.fillText('Куда ушли деньги',110,700);
+  const colors=['#8f7cf2','#2fb3a3','#f39a69','#f088b2'];
+  top.forEach(([id,v],i)=>{const e=byId(id),y=760+i*95;x.font=`500 32px ${F}`;x.fillStyle='#2a2440';x.fillText(`${e.ic} ${e.name}`,110,y);x.textAlign='right';x.fillText(Math.round(v/spent*100)+'%',W-110,y);x.textAlign='left';
+    rr(110,y+20,W-220,18,9,'#eceaf6');rr(110,y+20,Math.max(18,(W-220)*v/spent),18,9,colors[i])});
+  const st=typeof streakNow==='function'?streakNow():0;
+  x.fillStyle='#fff';x.font=`600 36px ${F}`;if(st>1)x.fillText(`🔥 ${st} дней подряд веду бюджет`,70,1210);
+  x.font=`500 30px ${F}`;x.globalAlpha=.9;x.fillText('Веду бюджет в Telegram: @konverty_budget_bot',70,1280);x.globalAlpha=1;
+  toast('📸 Готовлю картинку…');
+  teamCall({act:'pic',png:c.toDataURL('image/png')}).then(j=>{if(j.ok){toast('📸 Картинка в чате с ботом. Перешли или выложи в сторис!');burst(['📸','✨'])}else toast('😕 Не получилось отправить')});
+}
+$('sharePic').addEventListener('click',shareMonth);
 function renderHistory(){
   const rows=[];
   for(let o=0;o>=-5;o--){const P=periodOf(o),t=S.tx.filter(x=>inP(x,P));
@@ -1130,7 +1223,7 @@ function renderTx(P,txP){
   for(const t of list){
     if(t.date!==last){last=t.date;const d=dparse(t.date);h+=`<div class="dayhead">${t.date===TODAYS?'Сегодня':t.date===dstr(addDays(NOW,-1))?'Вчера':`${d.getDate()} ${MON3[d.getMonth()]}`}</div>`}
     const e=byId(t.env), amt=t.cur&&t.cur!==S.cur?fmtC(t.orig,t.cur)+`<small>≈ ${fmt(t.sum)}</small>`:fmt(t.sum);
-    h+=`<div class="tx" data-tx="${t.id}"><span class="em" style="--c:var(${e.c})">${e.ic}</span><span class="n">${esc(t.note||e.name)}<small>${t.note?esc(e.name):''}${t.src==='bot'?(t.note?' · ':'')+'🤖 из чата':''}</small></span><span class="s">${e.save?'+':'−'}${amt}</span></div>`;
+    h+=`<div class="tx" data-tx="${t.id}"><span class="em" style="--c:var(${e.c})">${e.ic}</span><span class="n">${esc(t.note||e.name)}<small>${t.note?esc(e.name):''}${t.src==='bot'?(t.note?' · ':'')+'🤖 из чата':''}${t.by&&window.ACCESS&&t.by!==ACCESS.me&&t.byName?' · <span class="who">👤 '+esc(t.byName)+'</span>':''}</small></span><span class="s">${e.save?'+':'−'}${amt}</span></div>`;
     if(EDIT===t.id){
       const opts=S.cats.map(c=>`<option value="${c.id}"${c.id===t.env?' selected':''}>${c.ic} ${esc(c.name)}</option>`).join('');
       const co=Object.entries(CUR).map(([c,[s2]])=>`<option value="${c}"${c===(t.cur||S.cur)?' selected':''}>${s2} ${c}</option>`).join('');
@@ -1144,7 +1237,9 @@ function renderTx(P,txP){
 function mkTx(orig,cur,env,date,note){
   const base=conv(orig,cur,S.cur); if(base==null)return null;
   const usd=conv(orig,cur,'USD');
-  return {id:Date.now(),date,env,sum:Math.round(base),orig,cur,usd:usd==null?null:Math.round(usd*100)/100,note};
+  const t={id:Date.now(),date,env,sum:Math.round(base),orig,cur,usd:usd==null?null:Math.round(usd*100)/100,note};
+  if(window.ACCESS&&ACCESS.members&&ACCESS.members.length>1){t.by=ACCESS.me;t.byName=(tg&&tg.initDataUnsafe&&tg.initDataUnsafe.user&&tg.initDataUnsafe.user.first_name)||''}
+  return t;
 }
 $('txList').addEventListener('click',e=>{
   if(e.target.closest('.tx-edit')){
@@ -1466,6 +1561,7 @@ function exitDemo(silent){
 
 /* ---------- подсказки «?» ---------- */
 const HELP={
+  team:['👫 Общий бюджет','Пригласи партнёра по ссылке, и вы будете вести один бюджет на двоих: общие конверты, цели и траты. Каждый пишет траты своему боту, всё сходится в одном месте. Видно, кто что записал.','В бюджете может быть 2 человека: ты и ещё один.'],
   chef:['👨‍🍳 ИИ-повар','Напиши, что хочешь есть: кухню, продукты, сколько времени готовить. ИИ составит меню на 7 дней и список покупок под твой бюджет на еду. Не нравится блюдо — жми 🔄 рядом с ним.','То же самое можно писать боту в чат: «меню на неделю, китайская кухня», «не люблю грибы», «замени ужин в среду».'],
   basket:['🧺 Стоимость корзины','Примерная цена всего списка покупок по средним ценам и сравнение с тем, что у тебя в конверте на еду на неделю.','После похода в магазин нажми «Закончил покупки» и впиши сумму чека. Трата запишется сама, а цены подстроятся под твой город.'],
   game:['🔥 Серия и значки','Серия — сколько дней подряд ты записываешь траты (или отмечаешь «день без трат» в боте). За привычки и достижения открываются значки, а за записи и значки растёт уровень.'],
@@ -1689,7 +1785,7 @@ if(useServer)fetch('/api/rates').then(r=>r.json()).then(j=>{if(j&&j.ok&&j.rates)
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{applyTheme()});
 try{if(inTG)tg.onEvent('themeChanged',applyTheme)}catch(e){}
 new MutationObserver(()=>{Object.values(charts).forEach(c=>c.destroy());charts={};render()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-function pullServer(){if(!useServer||S.demo)return;api('GET').then(r=>{if(!r||!r.state||!r.state.tx)return;if(r.state.srv){S.srv=r.state.srv;try{renderFood();renderGame()}catch(e){}}const have=new Set(S.tx.map(t=>t.id));
+function pullServer(){if(!useServer||S.demo)return;api('GET').then(r=>{if(r&&r.access){window.ACCESS=r.access;try{renderAccess();payOverlay()}catch(e){}}if(!r||!r.state||!r.state.tx)return;if(r.state.srv){S.srv=r.state.srv;try{renderFood();renderGame()}catch(e){}}const have=new Set(S.tx.map(t=>t.id));
   const add=r.state.tx.filter(t=>!have.has(t.id)&&!deletedIds.includes(t.id)).map(t=>({...t,date:t.date||`${t.m}-${pad(t.day||1)}`}));
   if(add.length){S.tx.push(...add);render();toast(`🤖 Из чата добавлено трат: ${add.length}`)}}).catch(()=>{})}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pullServer()});
