@@ -1700,13 +1700,18 @@ function savePrefs(){const prefs=$('prefIn').value.split(',').map(x=>x.trim().to
   const old=((S.srv&&S.srv.prefs)||[]).join(',');if(prefs.join(',')===old)return Promise.resolve();
   S.srv={...(S.srv||{}),prefs};return aiCall({act:'prefs',prefs})}
 $('prefIn').addEventListener('change',()=>{savePrefs().then(()=>toast('👌 Запомнил'))});
+function chefPay(){
+  sheet('👨‍🍳 ИИ-повар — в полной версии','Меню на неделю под твой бюджет и вкусы, список покупок, замена блюд и цена корзины.<br><br>Всё остальное в пробном периоде работает. Полный доступ — один раз и навсегда, без подписки.');
+  setTimeout(()=>{const s=document.querySelector('.sheet');if(!s||s.querySelector('#chefBuy'))return;const b=document.createElement('button');b.type='button';b.className='btn';b.id='chefBuy';b.textContent=`💎 Открыть за ⭐ ${(window.ACCESS&&ACCESS.price)||600}`;b.onclick=()=>{const bg=s.closest('.sheet-bg');if(bg)bg.remove();buyFull()};const last=s.querySelector('.btn');last?s.insertBefore(b,last):s.appendChild(b)},0)}
+const chefLocked=()=>useServer&&window.ACCESS&&!ACCESS.paid;
 function runChef(prompt){
   if(CHEF_BUSY)return;if(S.demo){toast('В примере ИИ-повар не работает 🙂');return}
+  if(chefLocked()){chefPay();return}
   CHEF_BUSY=true;$('chefGo').disabled=true;
   $('chefState').innerHTML='<div class="chef-load"><span class="pan">🍳</span><span>Составляю меню и список покупок… Это займёт секунд 20.</span></div>';
   savePrefs().then(()=>aiCall({act:'menu',prompt})).then(r=>{
     CHEF_BUSY=false;$('chefGo').disabled=false;
-    if(!r||!r.ok){$('chefState').innerHTML='';toast(AIERR[r&&r.error]||AIERR.ai);renderFood();return}
+    if(!r||!r.ok){$('chefState').innerHTML='';if(r&&r.error==='paid'){chefPay();renderFood();return}toast(AIERR[r&&r.error]||AIERR.ai);renderFood();return}
     S.srv=r.srv;day=0;renderFood();burst(['🍳','🥕','🥘','✨']);toast('👨‍🍳 Меню готово! Список покупок обновлён');
     $('days').scrollIntoView({behavior:'smooth',block:'center'})})}
 $('chefGo').addEventListener('click',()=>{const t=$('chefIn').value.trim();runChef(t||'обычное сытное и недорогое меню')});
@@ -1714,6 +1719,7 @@ $('chefChips').addEventListener('click',e=>{const b=e.target.closest('[data-q]')
 $('chefState').addEventListener('click',e=>{if(!e.target.closest('#chefReset'))return;S.srv={...S.srv,menuAI:null};S.checked={};renderFood();aiCall({act:'clear'});toast('↩️ Вернул обычное меню')});
 $('meals').addEventListener('click',e=>{const b=e.target.closest('[data-swap]');if(!b)return;
   if(!curMenu().ai){toast('Сначала составь меню с ИИ-поваром 👨‍🍳 выше');$('chefCard').scrollIntoView({behavior:'smooth'});return}
+  if(chefLocked()){chefPay();return}
   if(b.classList.contains('busy'))return;b.classList.add('busy');
   aiCall({act:'swap',day,meal:+b.dataset.swap}).then(r=>{b.classList.remove('busy');
     if(!r||!r.ok){toast(AIERR[r&&r.error]||AIERR.ai);return}

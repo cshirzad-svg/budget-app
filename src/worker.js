@@ -37,9 +37,10 @@ const BC_TEXT = (gift) => 'Привет! Это бот «Бюджет в кон�
   'За последние недели тут многое поменялось. Самое полезное:\n\n' +
   '💬 <b>Писать траты можно как сообщение другу:</b> «кофе 300», «вчера такси 500». Можно голосовым, бот сам разберёт.\n' +
   '🧾 <b>Фото чека</b> — бот сам разнесёт покупки по конвертам.\n' +
+  '📸 <b>Скрин истории операций</b> из Алипея, WeChat, Сбера или Т-Банка — бот найдёт все траты и запишет одной кнопкой.\n' +
   '☀️ <b>Утром бот подскажет, сколько можно потратить сегодня</b>, чтобы уложиться в месяц. Вечером спросит, всё ли записал.\n' +
   '⏰ <b>«Напомни 25-го оплатить интернет 500»</b> — напомнит в нужный день и сам запишет трату.\n' +
-  '🍲 <b>ИИ-повар:</b> напиши «хочу на неделю китайскую кухню», и он соберёт меню, список покупок и примерную стоимость корзины.\n' +
+  '🍲 <b>ИИ-повар:</b> напиши «хочу на неделю китайскую кухню», и он соберёт меню, список покупок и примерную стоимость корзины.' + (gift ? '' : ' Это в полной версии.') + '\n' +
   '👫 <b>Общий бюджет на двоих:</b> позови партнёра, и вы будете вести одни конверты.\n' +
   '🐷 <b>Питомец-копилка:</b> растёт, когда откладываешь, и грустит, если перерасходуешь.\n\n' +
   'Ещё появились челленджи недели, значки за привычки и импорт выписки из банка.\n\n' +
@@ -948,6 +949,10 @@ async function sendPaywall(env, chat, owner, acc) {
   await tg(env, 'sendMessage', { chat_id: chat, text: `🔒 Пробный период закончился${acc && acc.trialEnd ? ' ' + new Date(acc.trialEnd).toLocaleDateString('ru-RU') : ''}.\n\nВсе твои записи сохранены. Чтобы продолжить вести бюджет, открой полный доступ навсегда — один раз, без подписки 👇` });
   await tg(env, 'sendInvoice', { chat_id: chat, ...invoiceBody(env, owner) });
 }
+async function chefLocked(env, chat, owner) {
+  await tg(env, 'sendMessage', { chat_id: chat, text: '👨‍🍳 ИИ-повар есть только в полной версии: меню на неделю под твой бюджет, список покупок и цена корзины.\n\nВсё остальное в пробном периоде работает. Открыть полный доступ навсегда — один раз, без подписки 👇' });
+  await tg(env, 'sendInvoice', { chat_id: chat, ...invoiceBody(env, owner) });
+}
 async function botName(env) {
   const reg = store(env, '__registry__');
   let n = await reg.meta('botname');
@@ -1113,6 +1118,7 @@ async function onUpdate(update, env, origin) {
   }
   if (update.callback_query && /^m:/.test(update.callback_query.data || '')) {
     const q = update.callback_query, st = await userStore(env, q.from.id, q.from.first_name), state = (await st.getState()) || {};
+    if (!(await accessOf(env, st.owner)).paid) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id }); await chefLocked(env, q.from.id, st.owner); return; }
     await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: '👨‍🍳 Готовлю…' });
     const last = (state.srv && state.srv.menuAI && state.srv.menuAI.q) || '';
     await foodMenu(env, st, state, q.from.id, q.data === 'm:cheap' ? (last + ', подешевле, бюджетные продукты').replace(/^, /, '') : last, origin);
@@ -1232,6 +1238,7 @@ async function onUpdate(update, env, origin) {
   const reg = store(env, '__registry__');
   await reg.regUpdate(uid, { seen: Date.now(), name: msg.from.first_name || '', user: msg.from.username || '' });
   const fi = foodIntent(text);
+  if ((fi === 'menu' || fi === 'swap') && !(await accessOf(env, st.owner)).paid) { await chefLocked(env, chat, st.owner); return; }
   if (fi) {
     const state = (await st.getState()) || {};
     const srv = state.srv || {};
@@ -1487,6 +1494,7 @@ export default {
       if (b.act === 'prefs') return json({ ok: true, srv: await st.srvPatch({ prefs: (Array.isArray(b.prefs) ? b.prefs : []).map((x) => String(x).trim().toLowerCase()).filter(Boolean).slice(0, 20) }) });
       if (b.act === 'clear') return json({ ok: true, srv: await st.srvPatch({ menuAI: null }) });
       if (!env.AI) return json({ ok: false, error: 'no_ai' });
+      if ((b.act === 'menu' || b.act === 'swap') && !(await accessOf(env, st.owner)).paid) return json({ ok: false, error: 'paid' });
       if (!(await st.aiTick(todayStr(state), AI_MAX))) return json({ ok: false, error: 'limit' });
       if (b.act === 'menu') {
         let m = null; try { m = await makeMenu(env, state, String(b.prompt || '').slice(0, 300)); } catch (e) { console.error('menu', e); }
