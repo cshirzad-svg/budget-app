@@ -31,7 +31,7 @@ const HELP =
 const FREE_USERS = ['svetlana_znatnyiplov', 'roman77gor'];
 
 /* ---------- рассылка ---------- */
-const BC_VER = 'news-1';
+const BC_VER = 'news-1b';
 const BC_VIDEO = 'promo/news-1.mp4';
 const BC_TEXT = (gift) => 'Привет! Это бот «Бюджет в конвертах» 👋\n\n' +
   'За последние недели тут многое поменялось. Самое полезное:\n\n' +
@@ -1040,7 +1040,7 @@ async function onUpdate(update, env, origin) {
     const list = (await reg.regList()).filter((u) => u.uid !== admin && !u.blocked);
     let ok = 0, fail = 0;
     for (const u0 of list) {
-      const u = await reg.regUpdate(u0.uid, {});
+      const u = { ...(await reg.regUpdate(u0.uid, {})), uid: u0.uid };
       const r = await sendNews(env, u.uid, !!u.gift, origin);
       if (r && r.ok) { ok++; await reg.regUpdate(u.uid, { bcGot: BC_VER }); } else { fail++; if (r && r.error_code === 403) await reg.regUpdate(u.uid, { blocked: true }); }
       await new Promise((res) => setTimeout(res, 60));
