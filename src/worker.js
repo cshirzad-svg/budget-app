@@ -838,10 +838,10 @@ export async function readReceipt(env, bytes) {
 const VISION2 = ['@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct'];
 function b64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
 const SHOT_PROMPT = 'Это скриншот. Это может быть список операций из банка или кошелька (Alipay, WeChat Pay, Сбер, Т-Банк и т.п.), фото кассового чека или что-то другое.\n' +
-  'Если это СПИСОК ОПЕРАЦИЙ, перепиши КАЖДУЮ операцию, которую видно целиком, сверху вниз. Итоги месяца в шапке («Expenses», «Income», «Расходы за месяц») НЕ включай. Ответь ТОЛЬКО JSON:\n' +
+  'Если это СПИСОК ОПЕРАЦИЙ, перепиши КАЖДУЮ операцию сверху вниз. НИЧЕГО НЕ ВЫДУМЫВАЙ: если сумма строки закрыта кнопкой, плашкой или обрезана краем экрана — пропусти строку целиком; если не видна только дата — поставь "d":"". Никогда не подставляй сумму или дату из соседней строки. Итоги месяца в шапке («Expenses», «Income», «Расходы за месяц») НЕ включай. Ответь ТОЛЬКО JSON:\n' +
   '{"type":"list","cur":"CNY","items":[{"d":"дата как на экране: 10-14, Today, Yesterday, Сегодня, Вчера, 14 октября","t":"время ЧЧ:ММ или пусто","m":"получатель или описание как на экране","a":-12.90,"k":"одно слово из: продукты, кафе, доставка, такси, транспорт, аптека, одежда, быт, связь, развлечения, перевод, другое","n":"коротко по-русски, 1–3 слова: «Такси DiDi», «Кофе Luckin», «Аренда пауэрбанка»"}]}\n' +
   'a — расход со знаком минус, поступление со знаком плюс. cur — валюта: ¥ или Alipay/WeChat — CNY, ₽ или Сбер/Т-Банк — RUB, $ — USD.\n' +
-  'Подсказки: 打车/快车/滴滴 — такси; 充电宝 — аренда пауэрбанка (быт); 外卖 — доставка; 订单付款 с категорией Food — кафе; Transfer/转账 — перевод.\n' +
+  'В "n" пиши только по-русски или латиницей, без иероглифов и без имён водителей. Подсказки: 打车/快车/滴滴 — такси; 充电宝 — аренда пауэрбанка (быт); 外卖 — доставка; 订单付款 с категорией Food — кафе; Transfer/转账 — перевод.\n' +
   'Если это ЧЕК — ответь {"type":"receipt"}. Если ни то ни другое — {"type":"other"}.';
 async function visionRun(env, model, prompt, bytes) {
   const r = await env.AI.run(model, { messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + b64(bytes) } }] }], max_tokens: 2500, temperature: 0.1 });
@@ -858,7 +858,8 @@ const MONR = ['янв', 'фев', 'мар', 'апр', 'ма', 'июн', 'июл'
 export function shotDate(d, state) {
   const today = todayStr(state), x = String(d || '').toLowerCase().trim();
   const yest = ymd(new Date(todayUTC(state) - 864e5));
-  if (!x || /today|сегодня|今天/.test(x)) return today;
+  if (!x) return null;
+  if (/today|сегодня|今天/.test(x)) return today;
   if (/yesterday|вчера|昨天/.test(x)) return yest;
   const Y = +today.slice(0, 4);
   const mk = (y, m, dd) => { if (!(m >= 1 && m <= 12 && dd >= 1 && dd <= 31)) return null; let s = `${y}-${pad2(m)}-${pad2(dd)}`; if (s > today) s = `${y - 1}-${pad2(m)}-${pad2(dd)}`; return s; };
@@ -882,14 +883,17 @@ export function shotItems(j, state) {
     const a = +String(it.a ?? '').replace(/\s/g, '').replace(',', '.').replace(/[^\d.+-]/g, '');
     if (!Number.isFinite(a) || a === 0) continue;
     if (a > 0) { income += a; continue; }
-    const amt = Math.round(-a * 100) / 100, date = shotDate(it.d, state), time = /^\d{1,2}:\d{2}$/.test(String(it.t || '').trim()) ? String(it.t).trim().padStart(5, '0') : '';
+    const d0 = shotDate(it.d, state), amt = Math.round(-a * 100) / 100, date = d0 || todayStr(state), time = /^\d{1,2}:\d{2}$/.test(String(it.t || '').trim()) ? String(it.t).trim().padStart(5, '0') : '';
     const imp = `shot:${date}:${time}:${amt.toFixed(2)}`;
     if (seen.has(imp)) continue; seen.add(imp);
     const k = String(it.k || '').toLowerCase().trim();
-    const note = String(it.n || it.m || 'Покупка').replace(/[«»"]/g, '').slice(0, 40);
+    const KN = { 'продукты': 'Продукты', 'кафе': 'Кафе', 'доставка': 'Доставка', 'такси': 'Такси', 'транспорт': 'Транспорт', 'аптека': 'Аптека', 'одежда': 'Одежда', 'быт': 'Быт', 'связь': 'Связь', 'развлечения': 'Развлечения', 'перевод': 'Перевод' };
+    let note = String(it.n || it.m || '').replace(/[«»"]/g, '').replace(/[\u3000-\u9fff\uff00-\uffef]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (note.length < 3 || /уплата по заказу|оплата заказа|order payment/i.test(note)) note = KN[k] || 'Покупка';
+    note = note.slice(0, 40);
     const env = (k === 'перевод' ? null : detectEnv(`${SHOT_K[k] || ''} ${note}`.trim(), state)) || fallback;
     const dup = keys.has(imp) ? 'imp' : tx.some((t) => txDate(t) === date && (t.cur || state.cur) === cur && Math.abs((t.orig ?? t.sum) - amt) < 0.01) ? 'soft' : '';
-    items.push({ date, time, amt, note, env, imp, dup, on: !dup && k !== 'перевод' });
+    items.push({ date, time, amt, note, env, imp, dup: dup || (d0 ? '' : 'nodate'), on: !dup && !!d0 && k !== 'перевод' });
   }
   return { cur, items: items.slice(0, 24), income: Math.round(income * 100) / 100 };
 }
@@ -898,7 +902,7 @@ export function shotView(o, state) {
   const cats = (id) => catInfo(id, state);
   const on = o.items.filter((x) => x.on), total = on.reduce((a, x) => a + x.amt, 0);
   let t = `📸 <b>Нашёл на скрине ${o.items.length} ${o.items.length === 1 ? 'трату' : o.items.length < 5 ? 'траты' : 'трат'}</b>\n\n`;
-  t += o.items.map((x, i) => `${x.on ? '✅' : '▫️'} ${i + 1}. ${dateHuman(x.date, state)}${x.time ? ' ' + x.time : ''} · ${esc(x.note)} — <b>${money2(x.amt, o.cur)}</b> ${cats(x.env).ic}${x.dup === 'imp' ? ' <i>(уже записано)</i>' : x.dup === 'soft' ? ' <i>(похоже, уже есть)</i>' : ''}`).join('\n');
+  t += o.items.map((x, i) => `${x.on ? '✅' : '▫️'} ${i + 1}. ${dateHuman(x.date, state)}${x.time ? ' ' + x.time : ''} · ${esc(x.note)} — <b>${money2(x.amt, o.cur)}</b> ${cats(x.env).ic}${x.dup === 'imp' ? ' <i>(уже записано)</i>' : x.dup === 'soft' ? ' <i>(похоже, уже есть)</i>' : x.dup === 'nodate' ? ' <i>(дата не видна — проверь)</i>' : ''}`).join('\n');
   if (o.income) t += `\n\n➕ Поступления ${fmt(o.income, o.cur)} не записываю.`;
   t += '\n\nНажми на номер, чтобы убрать или вернуть трату.';
   const nums = o.items.map((x, i) => ({ text: `${x.on ? '✅' : '▫️'} ${i + 1}`, callback_data: `sh:t:${o.id}:${i}` }));
