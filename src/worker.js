@@ -508,10 +508,10 @@ const APPKB = (env) => (env.ORIGIN ? [[{ text: '📊 Открыть бюджет
 async function runSchedule(env) {
   const reg = store(env, '__registry__');
   try {
-    if ((await reg.meta('whv')) !== 2 && env.ORIGIN) {
+    if ((await reg.meta('whv')) !== 3 && env.ORIGIN) {
       const o = env.ORIGIN.replace(/\/$/, '');
       const w = await tg(env, 'setWebhook', { url: o + '/tg', secret_token: await webhookSecret(env.BOT_TOKEN), allowed_updates: ['message', 'callback_query', 'pre_checkout_query'] });
-      if (w.ok) await reg.meta('whv', 2);
+      if (w.ok) { await reg.meta('whv', 3); await tg(env, 'setChatMenuButton', { menu_button: { type: 'web_app', text: 'Мой бюджет', web_app: { url: o + '/' } } }); }
     }
   } catch (e) { console.error('whv', e); }
   const users = await reg.regList();
@@ -617,7 +617,8 @@ async function tg(env, method, body) {
     return { ok: false };
   }
 }
-const appButton = (origin) => ({ inline_keyboard: [[{ text: '📊 Открыть бюджет', web_app: { url: origin + '/' } }]] });
+let ORIGIN_FIX = null;
+const appButton = (origin) => ({ inline_keyboard: [[{ text: '📊 Открыть бюджет', web_app: { url: (ORIGIN_FIX || origin + '/') } }]] });
 
 /* ---------- ключевые слова вместо команд ---------- */
 export const KB = { keyboard: [[{ text: '☀️ Сегодня' }, { text: '📊 Итоги месяца' }], [{ text: '📅 Неделя' }, { text: '✉️ Категории' }], [{ text: '⏰ Напоминания' }, { text: '🔁 Платежи' }], [{ text: '↩️ Отменить' }, { text: '💡 Помощь' }]], resize_keyboard: true, is_persistent: true, input_field_placeholder: 'Напиши трату: кофе 300' };
@@ -1225,6 +1226,7 @@ export default {
     const url = new URL(request.url);
     const origin = url.origin;
     if (!env.ORIGIN) env.ORIGIN = origin + '/';
+    ORIGIN_FIX = env.ORIGIN;
 
     if (!env.BOT_TOKEN && url.pathname !== '/') {
       return json({ ok: false, error: 'BOT_TOKEN не задан в настройках Worker' }, 500);
@@ -1232,14 +1234,15 @@ export default {
 
     // Один раз открыть в браузере: привязывает бота к этому серверу
     if (url.pathname === '/setup') {
+      const base = (env.ORIGIN || origin + '/').replace(/\/$/, '');
       const r = await tg(env, 'setWebhook', {
-        url: origin + '/tg',
+        url: base + '/tg',
         secret_token: await webhookSecret(env.BOT_TOKEN),
         allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
         drop_pending_updates: true,
       });
       await tg(env, 'setChatMenuButton', {
-        menu_button: { type: 'web_app', text: 'Мой бюджет', web_app: { url: origin + '/' } },
+        menu_button: { type: 'web_app', text: 'Мой бюджет', web_app: { url: base + '/' } },
       });
       const rc = await tg(env, 'setMyCommands', { commands: [{ command: 'start', description: '👋 Начать и кнопки' }] });
       const rd = await tg(env, 'setMyDescription', { description:
