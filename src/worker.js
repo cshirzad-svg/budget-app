@@ -27,11 +27,37 @@ const HELP =
   'Я сам пойму категорию и валюту. <code>итоги</code> — сколько потрачено за месяц. Ошибся — /undo.';
 
 /* ---------- хранилище: один объект на пользователя ---------- */
+/* первые пользователи (семья) — полный доступ бесплатно */
+const FREE_USERS = ['svetlana_znatnyiplov', 'roman77gor'];
+
+/* ---------- рассылка ---------- */
+const BC_VER = 'news-1';
+const BC_VIDEO = 'promo/news-1.mp4';
+const BC_TEXT = (gift) => 'Привет! Это бот «Бюджет в конвертах» 👋\n\n' +
+  'За последние недели тут многое поменялось. Самое полезное:\n\n' +
+  '💬 <b>Писать траты можно как сообщение другу:</b> «кофе 300», «вчера такси 500». Можно голосовым, бот сам разберёт.\n' +
+  '🧾 <b>Фото чека</b> — бот сам разнесёт покупки по конвертам.\n' +
+  '☀️ <b>Утром бот подскажет, сколько можно потратить сегодня</b>, чтобы уложиться в месяц. Вечером спросит, всё ли записал.\n' +
+  '⏰ <b>«Напомни 25-го оплатить интернет 500»</b> — напомнит в нужный день и сам запишет трату.\n' +
+  '🍲 <b>ИИ-повар:</b> напиши «хочу на неделю китайскую кухню», и он соберёт меню, список покупок и примерную стоимость корзины.\n' +
+  '👫 <b>Общий бюджет на двоих:</b> позови партнёра, и вы будете вести одни конверты.\n' +
+  '🐷 <b>Питомец-копилка:</b> растёт, когда откладываешь, и грустит, если перерасходуешь.\n\n' +
+  'Ещё появились челленджи недели, значки за привычки и импорт выписки из банка.\n\n' +
+  (gift ? 'Ты с нами с самого начала, поэтому у тебя полный доступ навсегда 🎁\n\n' : '') +
+  'Попробуй прямо сейчас: напиши боту любую трату 👇';
+async function sendNews(env, chat, gift, origin) {
+  const base = env.ORIGIN || origin + '/';
+  const a = await tg(env, 'sendAnimation', { chat_id: chat, animation: new URL(BC_VIDEO, base).href, caption: 'Что нового в боте 💌' });
+  if (!a.ok && a.error_code === 403) return a;
+  return tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: BC_TEXT(gift), reply_markup: appButton(origin) });
+}
+
 export class UserStore extends DurableObject {
   /* реестр (один экземпляр с именем __registry__) */
   async regUpdate(uid, patch) {
     const k = 'u:' + uid;
     const v = { first: Date.now(), ...((await this.ctx.storage.get(k)) || {}), ...patch };
+    if (!v.paid && v.user && FREE_USERS.includes(String(v.user).toLowerCase())) Object.assign(v, { paid: true, paidAt: Date.now(), gift: true });
     await this.ctx.storage.put(k, v);
     return v;
   }
@@ -905,6 +931,26 @@ async function onUpdate(update, env, origin) {
     await tg(env, 'sendMessage', { chat_id: owner, text: `👫 ${q.from.first_name || 'Партнёр'} присоединился к твоему бюджету! Теперь вы видите траты друг друга.` });
     return;
   }
+  if (update.callback_query && /^bc:/.test(update.callback_query.data || '')) {
+    const q = update.callback_query, reg = store(env, '__registry__'), admin = await reg.getAdmin();
+    const edit = (text) => tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text });
+    if (admin !== q.from.id) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Только для админа' }); return; }
+    if (q.data === 'bc:no') { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Отменено' }); await edit('✖️ Рассылка отменена.'); return; }
+    const ver = q.data.slice(3);
+    if (ver !== BC_VER || (await reg.meta('bc:' + ver))) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Эта рассылка уже отправлена' }); return; }
+    await reg.meta('bc:' + ver, Date.now());
+    await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Отправляю…' });
+    await edit('📤 Отправляю…');
+    const list = (await reg.regList()).filter((u) => u.uid !== admin && !u.blocked);
+    let ok = 0, fail = 0;
+    for (const u of list) {
+      const r = await sendNews(env, u.uid, !!u.gift, origin);
+      if (r && r.ok) ok++; else { fail++; if (r && r.error_code === 403) await reg.regUpdate(u.uid, { blocked: true }); }
+      await new Promise((res) => setTimeout(res, 60));
+    }
+    await edit(`✅ Рассылка отправлена: ${ok} доставлено${fail ? `, ${fail} не дошло (бот заблокирован или чат удалён)` : ''}.`);
+    return;
+  }
   if (update.callback_query && update.callback_query.data === 'ns') {
     const q = update.callback_query;
     try { const st0 = await userStore(env, q.from.id), s0 = (await st0.getState()) || {}; const ns = new Set(((s0.srv || {}).ns || [])); ns.add(todayStr(s0)); await st0.srvPatch({ ns: [...ns].slice(-120) }); } catch (e) { console.error('ns', e); }
@@ -1134,6 +1180,16 @@ async function onUpdate(update, env, origin) {
   if (text === '/admin') {
     const a = await reg.claimAdmin(uid);
     await tg(env, 'sendMessage', { chat_id: chat, text: a === uid ? '👑 Ты админ: сюда будут приходить отзывы. /stats — статистика.' : 'Админ уже назначен.' });
+    return;
+  }
+  if (/^\/?(broadcast|рассылка)$/i.test(text)) {
+    if ((await reg.getAdmin()) !== uid) return;
+    const list = (await reg.regList()).filter((u) => u.uid !== uid && !u.blocked);
+    await sendNews(env, chat, false, origin);
+    const sent = await reg.meta('bc:' + BC_VER);
+    await tg(env, 'sendMessage', { chat_id: chat, text: sent ? `👆 Это рассылка «${BC_VER}», она уже отправлена ${new Date(sent).toLocaleString('ru-RU')}.` :
+      `👆 Так выглядит рассылка.\nПолучат: ${list.length} чел. — ${list.map((u) => u.name || u.user || u.uid).slice(0, 20).join(', ')}${list.length > 20 ? '…' : ''}`,
+      reply_markup: sent ? undefined : { inline_keyboard: [[{ text: `✅ Отправить всем (${list.length})`, callback_data: 'bc:' + BC_VER }], [{ text: '✖️ Отмена', callback_data: 'bc:no' }]] } });
     return;
   }
   if (/^\/grant\s+\d+/.test(text)) {
