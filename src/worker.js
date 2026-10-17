@@ -1049,6 +1049,7 @@ async function onUpdate(update, env, origin) {
     const heard = await transcribe(env, (msg.voice || msg.audio).file_id);
     if (!heard) { await tg(env, 'sendMessage', { chat_id: chat, text: '🎤 Не смог разобрать голосовое. Скажи ещё раз чуть чётче или напиши текстом: «кофе 300».' }); return; }
     text = heard.replace(/[.!?…]+$/g, '').trim();
+    try { const f0 = (await st.srvGet()).flags || {}; if (!f0.voice) await st.srvPatch({ flags: { ...f0, voice: 1 } }); } catch (e) { /* не критично */ }
     await tg(env, 'sendMessage', { chat_id: chat, text: `🎤 Услышал: «${text}»` });
   }
   if (!text) return;

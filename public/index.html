@@ -481,6 +481,16 @@ input[type=number]{-moz-appearance:textfield}
 .chdays i.now{outline:2px solid var(--accent)}
 .ch-run b{font-family:var(--display);font-weight:500;font-size:18px}
 .ch-run .linkbtn{padding:0}
+
+.bwrap{max-height:56vh;overflow:auto;display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.bwrap .bgrid{max-height:none;overflow:visible}
+.bgh{font-size:13px;font-weight:700;color:var(--muted);margin-top:6px}
+.bgrid div.got{background:var(--accent-soft)}
+.bgrid div small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.bp{display:block;height:5px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:6px}
+.bp i{display:block;height:100%;background:var(--accent);font-style:normal}
+.bsum{font-size:14px}
+.bnext{background:var(--soft);border-radius:12px;padding:8px 12px;font-size:14px;margin-top:8px}
 /* пустой старт */
 .kpi .chip:not(.good):not(.bad){background:var(--soft);color:var(--muted)}
 .kpi[data-help]{cursor:pointer}.qi{opacity:.5;font-size:11px}
@@ -1152,36 +1162,65 @@ $('subsList').addEventListener('click',e=>{const b=e.target.closest('[data-sdel]
   S.subs=S.subs.filter(x=>String(x.id)!==b.dataset.sdel);save();render()});
 
 /* ---------- серия, значки, уровни ---------- */
-const BADGES=[['first','✍️','Первый шаг','Первая запись'],['s3','🔥','Разогрев','3 дня подряд'],['s7','⚡','Неделя','7 дней подряд'],['s30','🌋','Железная привычка','30 дней подряд'],
- ['tx50','📒','Летописец','50 записей'],['tx200','📚','Архивариус','200 записей'],['ns3','🧘','Дзен','3 дня без трат за месяц'],['save','🐷','Копилка','Первый раз отложил'],
- ['save10','💰','Подушка','Отложено 10 000 ₽ всего'],['month','🏆','Уложился','Закрыл месяц в рамках плана'],['goal50','🎯','Полпути','Цель накоплена наполовину'],
- ['chef','👨‍🍳','Шеф','Меню от ИИ-повара'],['receipt','🧾','Фотограф','Трата по фото чека'],['shop','🛒','Без лишнего','Закрыл список покупок'],['champ','🏁','Чемпион','Прошёл челлендж недели'],['pet','👑','Король копилки','Питомец вырос до короля']];
-const LEVELS=[[0,'Новичок'],[40,'Ученик'],[120,'Практик'],[300,'Профи'],[600,'Мастер бюджета']];
+/* значки: [id, эмодзи, название, условие, группа, секретный?] — прогресс считает badgeCtx */
+const BG=[['habit','🔥 Привычка'],['rec','✍️ Записи'],['eco','💸 Экономия'],['save','🐷 Копилка'],['food','🍳 Еда'],['ch','🏁 Челленджи'],['soc','👫 Вместе'],['secret','🤫 Секретные']];
+const BADGES=[
+ ['first','✍️','Первый шаг','Первая запись','habit'],['s3','🔥','Разогрев','3 дня подряд','habit'],['s7','⚡','Неделя','7 дней подряд','habit'],['s14','💪','Две недели','14 дней подряд','habit'],['s30','🌋','Железная привычка','30 дней подряд','habit'],['s100','🏛️','Легенда','100 дней подряд','habit'],
+ ['tx10','📝','Разогнался','10 записей','rec'],['tx50','📒','Летописец','50 записей','rec'],['tx200','📚','Архивариус','200 записей','rec'],['tx500','🧮','Бухгалтер','500 записей','rec'],['voice','🎤','Голос','Трата голосовым','rec'],['receipt','🧾','Фотограф','Трата по фото чека','rec'],['import','📥','Выписка','Загрузил выписку из банка','rec'],['cur3','✈️','Путешественник','Траты в 3 валютах','rec'],
+ ['ns3','🧘','Дзен','3 дня без трат за месяц','eco'],['ns7','🪷','Аскет','7 дней без трат за месяц','eco'],['month','🏆','Уложился','Месяц в рамках плана','eco'],['month3','🛡️','Стабильность','3 месяца подряд в плане','eco'],['sniper','🎯','Снайпер','Месяц: потратил 90–100% плана','eco'],['alloc','✅','Всё по полочкам','Распределил доход ровно на 100%','eco'],
+ ['save','🐷','Копилка','Первый раз отложил','save'],['save10','💰','Подушка','Отложено 10 000 ₽','save'],['save100','💎','Сотка','Отложено 100 000 ₽','save'],['goal50','🎈','Полпути','Цель накоплена наполовину','save'],['goal100','🌟','Мечта сбылась','Цель накоплена полностью','save'],['feed10','🍎','Заботливый','Покормил питомца 10 раз','save'],['pet','👑','Король копилки','Питомец вырос до короля','save'],
+ ['chef','👨‍🍳','Шеф','Меню от ИИ-повара','food'],['shop','🛒','Без лишнего','Закрыл список покупок','food'],['bk','🧺','Чек сошёлся','Записал сумму чека после магазина','food'],
+ ['champ','🏁','Чемпион','Прошёл челлендж','ch'],['champ3','🥇','Серийный чемпион','3 челленджа','ch'],['chall','🎖️','Коллекционер','Все 5 разных челленджей','ch'],
+ ['team','👫','Команда','Общий бюджет на двоих','soc'],['shared','📸','Хвастун','Поделился итогами месяца','soc'],
+ ['owl','🦉','Сова','Запись после полуночи','secret',1],['lark','🐓','Жаворонок','Запись до 7 утра','secret',1],['coffee30','☕','Кофеман','30 записей про кофе','secret',1],['comeback','🔄','Камбэк','Вернулся после недели без записей','secret',1]];
+const LEVELS=[[0,'Новичок'],[40,'Ученик'],[120,'Практик'],[300,'Профи'],[600,'Мастер бюджета'],[1000,'Гуру денег']];
 function streakNow(){const days=new Set(S.tx.map(t=>t.date));((S.srv&&S.srv.ns)||[]).forEach(d=>days.add(d));
   let d=new Date(NOW),n=0;if(!days.has(dstr(d)))d=addDays(d,-1);while(days.has(dstr(d))){n++;d=addDays(d,-1)}return n}
-function earned(){const st=streakNow(),n=S.tx.length,isS=t=>byId(t.env).save,fl=(S.srv&&S.srv.flags)||{};
-  const savedRub=S.tx.filter(isS).reduce((a,t)=>a+(conv(t.sum,S.cur,'RUB')||0),0);
+function badgeCtx(){
+  const st=streakNow(),n=S.tx.length,isS=t=>byId(t.env).save,fl=(S.srv&&S.srv.flags)||{},rub=t=>conv(t.sum,S.cur,'RUB')||0;
+  const savedRub=S.tx.filter(isS).reduce((a,t)=>a+rub(t),0);
   const P=periodOf(0),days=new Set(S.tx.filter(t=>inP(t,P)&&!isS(t)).map(t=>t.date));let z=0;for(let i=0;i<P.elapsed-1;i++)if(!days.has(dstr(addDays(P.start,i))))z++;
-  const plan=spendCats().reduce((a,e)=>a+(e.amt||0),0);let mo=false;
-  if(plan&&S.mode!=='simple')for(let o=-1;o>=-6;o--){const Q=periodOf(o),l=S.tx.filter(t=>inP(t,Q)&&!isS(t));if(l.length>=5&&l.reduce((a,t)=>a+t.sum,0)<=plan){mo=true;break}}
-  const g50=saveCats().some(c=>c.target&&((c.before||0)+S.tx.filter(t=>t.env===c.id).reduce((a,t)=>a+t.sum,0))>=c.target/2);
-  const B={first:n>=1,s3:st>=3,s7:st>=7,s30:st>=30,tx50:n>=50,tx200:n>=200,ns3:z>=3&&n>=5,save:S.tx.some(isS),save10:savedRub>=10000,month:mo,goal50:g50,chef:!!fl.chef,receipt:!!fl.receipt,shop:!!S.shopDone,champ:(S.chDone||[]).some(c=>c.won),pet:!!(S.pet&&petStage().i>=3)};
-  return {st,ids:BADGES.filter(b=>B[b[0]]).map(b=>b[0])}}
+  const plan=spendCats().reduce((a,e)=>a+(e.amt||0),0);let mo=0,run=0,best=0,sn=false;
+  if(plan&&S.mode!=='simple')for(let o=-12;o<=-1;o++){const Q=periodOf(o),l=S.tx.filter(t=>inP(t,Q)&&!isS(t)),sp=l.reduce((a,t)=>a+t.sum,0);
+    if(l.length>=5&&sp<=plan){mo++;run++;best=Math.max(best,run);if(sp>=plan*.9)sn=true}else run=0}
+  const goals=saveCats().filter(c=>c.target).map(c=>((c.before||0)+S.tx.filter(t=>t.env===c.id).reduce((a,t)=>a+t.sum,0))/c.target);
+  const g=goals.length?Math.max(...goals):0;
+  const wins=(S.chDone||[]).filter(c=>c.won),hrs=S.tx.filter(t=>t.src!=='import').map(t=>new Date(t.id).getHours());
+  const dates=[...new Set(S.tx.map(t=>t.date))].sort();let gap=false;for(let i=1;i<dates.length;i++)if((dparse(dates[i])-dparse(dates[i-1]))/864e5>=7)gap=true;
+  const free=Math.max(0,(S.income||0)-(S.rent||0)-(S.loans||0)),totA=S.cats.reduce((a,e)=>a+(e.amt||0),0);
+  return{st,P:{first:[n,1],s3:[st,3],s7:[st,7],s14:[st,14],s30:[st,30],s100:[st,100],tx10:[n,10],tx50:[n,50],tx200:[n,200],tx500:[n,500],
+    voice:!!fl.voice,receipt:!!fl.receipt,import:S.tx.some(t=>t.src==='import'),cur3:[new Set(S.tx.map(t=>t.cur||S.cur)).size,3],
+    ns3:[n>=5?z:0,3],ns7:[n>=5?z:0,7],month:mo>=1,month3:[best,3],sniper:sn,alloc:free>0&&Math.abs(totA-free)<1&&S.mode!=='simple',
+    save:S.tx.some(isS),save10:[Math.round(savedRub),10000],save100:[Math.round(savedRub),100000],goal50:g>=.5,goal100:g>=1,
+    feed10:[S.tx.filter(t=>t.note==='Покормил питомца').length,10],pet:!!(S.pet&&petStage().i>=3),
+    chef:!!fl.chef,shop:!!S.shopDone,bk:!!S.bkDone,champ:[wins.length,1],champ3:[wins.length,3],chall:[new Set(wins.map(w=>w.id)).size,5],
+    team:!!(window.ACCESS&&ACCESS.members&&ACCESS.members.length>1),shared:!!S.shared,
+    owl:hrs.some(h=>h<4),lark:hrs.some(h=>h>=4&&h<7),coffee30:[S.tx.filter(t=>/кофе|coffee|латте|капучино/i.test(t.note||'')).length,30],comeback:gap}}}
+const isDone=v=>Array.isArray(v)?v[0]>=v[1]:!!v;
+function earned(){const c=badgeCtx();return{st:c.st,ids:BADGES.filter(b=>isDone(c.P[b[0]])).map(b=>b[0]),ctx:c}}
 function renderGame(){
   if(S.demo){$('gameCard').hidden=true;return}$('gameCard').hidden=false;
   const {st,ids}=earned();S.badges=S.badges||{};
   if(!S.badgesInit){ids.forEach(id=>{if(!S.badges[id])S.badges[id]=TODAYS});S.badgesInit=1;save()}
   else{const fresh=ids.filter(id=>!S.badges[id]);if(fresh.length){fresh.forEach(id=>S.badges[id]=TODAYS);save();
-    const b=BADGES.find(x=>x[0]===fresh[0]);setTimeout(()=>{burst([b[1],'🏅','✨','🎉'],null,null,24);toast(`🏅 Новый значок: ${b[1]} «${b[2]}»`)},700)}}
+    const b=BADGES.find(x=>x[0]===fresh[0]);setTimeout(()=>{burst([b[1],'🏅','✨','🎉'],null,null,24);toast(`🏅 Новый значок: ${b[1]} «${b[2]}»${fresh.length>1?` и ещё ${fresh.length-1}`:''}`)},700)}}
   const xp=S.tx.length+15*ids.length;let li=0;LEVELS.forEach((l,i)=>{if(xp>=l[0])li=i});
   const nx=LEVELS[li+1];
   $('gFire').className='fire'+(st?'':' off');
   $('gStreak').textContent=st?`${st} ${st%10===1&&st%100!==11?'день':st%10>=2&&st%10<=4&&(st%100<12||st%100>14)?'дня':'дней'} подряд`:'Серия: начни сегодня';
-  $('gLevel').textContent=`Уровень ${li+1}: ${LEVELS[li][1]} · 🏅 ${ids.length} из ${BADGES.length}${nx?` · до «${nx[1]}» ${nx[0]-xp} XP`:''}`;
+  $('gLevel').textContent=`Уровень ${li+1}: ${LEVELS[li][1]} · 🏅 ${ids.length} из ${BADGES.length} — нажми, чтобы посмотреть`;
   $('gBar').style.width=(nx?Math.min(100,(xp-LEVELS[li][0])/(nx[0]-LEVELS[li][0])*100):100)+'%';
 }
-$('gameCard').addEventListener('click',e=>{if(e.target.closest('.help'))return;const {st,ids}=earned();
-  sheet(`🏅 Значки: ${ids.length} из ${BADGES.length}`,`🔥 Серия: ${st} дн. Записывай траты каждый день или жми «Без трат» в вечернем сообщении бота.<div class="bgrid" style="margin-top:12px">${BADGES.map(b=>`<div class="${ids.includes(b[0])?'':'lock'}"><i>${b[1]}</i><b>${b[2]}</b>${b[3]}</div>`).join('')}</div>`)});
+function badgesSheet(){const {st,ids,ctx}=earned(),xp=S.tx.length+15*ids.length;let li=0;LEVELS.forEach((l,i)=>{if(xp>=l[0])li=i});const nx=LEVELS[li+1];
+  const near=BADGES.filter(b=>!ids.includes(b[0])&&!b[5]&&Array.isArray(ctx.P[b[0]])&&ctx.P[b[0]][0]>0).map(b=>[b,ctx.P[b[0]][0]/ctx.P[b[0]][1]]).sort((a,b2)=>b2[1]-a[1])[0];
+  const tile=b=>{const got=ids.includes(b[0]),v=ctx.P[b[0]],hid=b[5]&&!got;
+    const pr=!got&&Array.isArray(v)?`<span class="bp"><i style="width:${Math.min(100,v[0]/v[1]*100)}%"></i></span><small>${Math.min(v[0],v[1]).toLocaleString('ru-RU')} / ${v[1].toLocaleString('ru-RU')}</small>`:'';
+    return `<div class="${got?'got':'lock'}"><i>${hid?'❔':b[1]}</i><b>${hid?'???':b[2]}</b>${hid?'Секретный значок':b[3]}${pr}${got&&S.badges&&S.badges[b[0]]?`<small>${dparse(S.badges[b[0]]).getDate()} ${MON3[dparse(S.badges[b[0]]).getMonth()]}</small>`:''}</div>`};
+  sheet(`🏅 Значки: ${ids.length} из ${BADGES.length}`,`<div class="bsum">🔥 Серия: <b>${st} дн.</b> · Уровень ${li+1}: <b>${LEVELS[li][1]}</b>${nx?` · до «${nx[1]}» ${nx[0]-xp} XP`:''}</div>
+   ${near?`<div class="bnext">🎯 Ближе всего: ${near[0][1]} <b>${near[0][2]}</b> — ${near[0][3].toLowerCase()} (${Math.round(near[1]*100)}%)</div>`:''}
+   <div class="bwrap">${BG.map(([g,name])=>{const list=BADGES.filter(b=>b[4]===g);return `<div class="bgh">${name} · ${list.filter(b=>ids.includes(b[0])).length}/${list.length}</div><div class="bgrid">${list.map(tile).join('')}</div>`}).join('')}</div>
+   <p class="hint" style="margin-top:8px">XP: каждая запись +1, каждый значок +15.</p>`)}
+$('gameCard').addEventListener('click',e=>{if(e.target.closest('.help'))return;badgesSheet()});
 
 /* ---------- доступ, общий бюджет, итоги ---------- */
 function payOverlay(){
@@ -1246,7 +1285,7 @@ function shareMonth(){
   x.fillStyle='#fff';x.font=`600 36px ${F}`;if(st>1)x.fillText(`🔥 ${st} дней подряд веду бюджет`,70,1210);
   x.font=`500 30px ${F}`;x.globalAlpha=.9;x.fillText('Веду бюджет в Telegram: @konverty_budget_bot',70,1280);x.globalAlpha=1;
   toast('📸 Готовлю картинку…');
-  teamCall({act:'pic',png:c.toDataURL('image/png')}).then(j=>{if(j.ok){toast('📸 Картинка в чате с ботом. Перешли или выложи в сторис!');burst(['📸','✨'])}else toast('😕 Не получилось отправить')});
+  teamCall({act:'pic',png:c.toDataURL('image/png')}).then(j=>{if(j.ok){S.shared=1;save();renderGame();toast('📸 Картинка в чате с ботом. Перешли или выложи в сторис!');burst(['📸','✨'])}else toast('😕 Не получилось отправить')});
 }
 $('sharePic').addEventListener('click',shareMonth);
 
@@ -1689,7 +1728,7 @@ $('bkDone').addEventListener('click',()=>{
     if(b&&b.dataset.b==='ok'){const v=parseFloat(bg.querySelector('#bkIn').value);if(!(v>0)){toast('Впиши сумму');return}
       const t=mkTx(v,S.cur,food.id,TODAYS,'Продукты по списку');if(t)S.tx.push(t);
       if(est>0){const nk=Math.min(3,Math.max(.3,(S.priceK||1)*v/est));S.priceK=Math.round(nk*100)/100}
-      S.checked={};S.badges=S.badges||{};render();save();renderFood();
+      S.checked={};S.bkDone=1;render();save();renderFood();
       burst(['🛒','🧾','✨']);toast(`🧾 Записал ${fmt(v)}. Цены подстроены: ${S.priceK>1?'+':''}${Math.round((S.priceK-1)*100)}% к средним`)}
     bg.remove()})});
 $('days').addEventListener('click',e=>{if(e.target.dataset.day){day=+e.target.dataset.day;renderFood()}});
