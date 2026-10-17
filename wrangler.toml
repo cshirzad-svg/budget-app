@@ -16,7 +16,7 @@ tag = "v1"
 new_sqlite_classes = ["UserStore"]
 
 [vars]
-ORIGIN = "https://konverty-budget.cshirzad.workers.dev/"
+ORIGIN = "https://konverty.app/"
 PRICE_STARS = "600"
 
 [triggers]
@@ -24,3 +24,7 @@ crons = ["*/5 * * * *"]
 
 [ai]
 binding = "AI"
+
+[[routes]]
+pattern = "konverty.app"
+custom_domain = true
