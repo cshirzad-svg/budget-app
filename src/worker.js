@@ -934,7 +934,7 @@ async function userStore(env, uid, name) {
     setPending: (x) => own.setPending(x), takePending: () => own.takePending(), seenUpd: (i) => own.seenUpd(i),
   };
 }
-const TRIAL_DAYS = 7;
+const TRIAL_DAYS = 3;
 async function accessOf(env, owner) {
   const reg = store(env, '__registry__');
   const [admin, u] = await Promise.all([reg.getAdmin(), reg.regGet(owner)]);
@@ -1201,7 +1201,7 @@ async function onUpdate(update, env, origin) {
     return;
   }
   if (/^\/?(paysupport|terms|поддержка)/i.test(text)) {
-    if (/^\/?terms/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: `📄 Условия: 7 дней бесплатно, дальше полный доступ навсегда за ${priceRub(env)} ₽ (разовый платёж картой или через СБП). Если что-то не работает — напиши «поддержка» и опиши проблему, ответим и при необходимости вернём оплату.` }); return; }
+    if (/^\/?terms/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: `📄 Условия: 3 дня бесплатно, дальше полный доступ навсегда за ${priceRub(env)} ₽ (разовый платёж картой или через СБП). Если что-то не работает — напиши «поддержка» и опиши проблему, ответим и при необходимости вернём оплату.` }); return; }
     const adm = await store(env, '__registry__').getAdmin(), body = text.replace(/^\/?(paysupport|поддержка)\s*/i, '');
     if (!body) { await tg(env, 'sendMessage', { chat_id: chat, text: '🛟 Опиши проблему одним сообщением, начиная со слова «поддержка». Например: «поддержка не проходит оплата».' }); return; }
     if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `🛟 Поддержка от ${msg.from.first_name || ''}${msg.from.username ? ' @' + msg.from.username : ''} (id ${uid}):\n\n${body.slice(0, 1500)}` });
