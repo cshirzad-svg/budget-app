@@ -1228,21 +1228,23 @@ function payOverlay(){
   const d=document.createElement('div');d.className='pay';d.id='pay';
   d.innerHTML=`<div class="pay-in"><div class="e">💌</div><h2>Пробный период закончился</h2><p>Все твои записи на месте. Открой полный доступ, чтобы продолжить.</p>
   <ul><li>✍️ Траты в чат, голосом и по фото чека</li><li>✉️ Конверты, цели, «можно сегодня»</li><li>👨‍🍳 ИИ-повар и список покупок под бюджет</li><li>⏰ Напоминания, отчёты недели и месяца</li><li>👫 Общий бюджет на двоих</li></ul>
-  <div class="price">⭐ ${ACCESS.price||600}</div><p>Один раз и навсегда, без подписки. Оплата звёздами Telegram.</p>
+  <div class="price">${ACCESS.price||990} ₽</div><p>Один раз и навсегда, без подписки. Картой или через СБП.</p>
   <button type="button" class="btn" id="payGo">💎 Открыть полный доступ</button></div>`;
   document.body.appendChild(d);d.querySelector('#payGo').onclick=buyFull;
 }
 function buyFull(){
   fetch('/api/team',{method:'POST',headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:JSON.stringify({act:'invoice'})}).then(r=>r.json()).then(j=>{
+    if(!j.ok&&j.error==='soon'){toast('💳 Оплата картой появится совсем скоро');return}
     if(!j.ok||!j.link){toast('😕 Не получилось открыть оплату');return}
-    tg.openInvoice(j.link,st=>{if(st==='paid'){ACCESS.paid=ACCESS.active=true;const p=document.getElementById('pay');if(p)p.remove();renderAccess();burst(['💎','🎉','✨','🥳'],null,null,30);toast('💎 Спасибо! Полный доступ открыт навсегда')}})
+    tg.openLink(j.link);toast('Открыл страницу оплаты. После оплаты вернись сюда — доступ откроется сам');
+    let n=0;const t=setInterval(()=>{n++;api('GET').then(r=>{if(r&&r.access&&r.access.paid){clearInterval(t);window.ACCESS=r.access;const p=document.getElementById('pay');if(p)p.remove();renderAccess();burst(['💎','🎉','✨','🥳'],null,null,30);toast('💎 Спасибо! Полный доступ открыт навсегда')}}).catch(()=>{});if(n>60)clearInterval(t)},5000)
   }).catch(()=>toast('😕 Нет связи'))}
 function teamCall(body){return fetch('/api/team',{method:'POST',headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(()=>({ok:false}))}
 function renderAccess(){
   const A=window.ACCESS;$('accCard').hidden=$('teamCard').hidden=!(useServer&&A);if(!A)return;
   if(A.paid){$('accTxt').textContent='Полный доступ навсегда. Спасибо, что ты с нами!';$('accBadge').textContent='💎 Полный';$('accPay').hidden=true}
   else{const left=Math.max(0,Math.ceil((A.trialEnd-Date.now())/864e5));$('accTxt').textContent=`Пробный период: осталось ${left} ${left===1?'день':left>=2&&left<=4?'дня':'дней'}.`;$('accBadge').textContent='🎁 Пробный';
-    $('accPay').hidden=false;$('accPay').textContent=`💎 Открыть навсегда за ⭐ ${A.price||600}`}
+    $('accPay').hidden=false;$('accPay').textContent=A.pay?`💎 Открыть навсегда за ${A.price||990} ₽`:'💳 Оплата картой — скоро'}
   const others=(A.members||[]).filter(m=>m.id!==A.me);
   if(A.isOwner&&!others.length)$('teamBody').innerHTML=`<p class="hint">Пригласи партнёра, и вы будете вести один бюджет на двоих. Каждый пишет траты своему боту, всё сходится здесь.</p><button type="button" class="btn" id="tmInv">💌 Пригласить партнёра</button><div id="tmLink"></div>`;
   else if(A.isOwner)$('teamBody').innerHTML=`<p>👫 Вместе с: <b>${others.map(m=>esc(m.name||'партнёр')).join(', ')}</b></p><button type="button" class="btn danger" id="tmRm" data-id="${others[0].id}">Убрать из бюджета</button>`;
@@ -1702,7 +1704,7 @@ function savePrefs(){const prefs=$('prefIn').value.split(',').map(x=>x.trim().to
 $('prefIn').addEventListener('change',()=>{savePrefs().then(()=>toast('👌 Запомнил'))});
 function chefPay(){
   sheet('👨‍🍳 ИИ-повар — в полной версии','Меню на неделю под твой бюджет и вкусы, список покупок, замена блюд и цена корзины.<br><br>Всё остальное в пробном периоде работает. Полный доступ — один раз и навсегда, без подписки.');
-  setTimeout(()=>{const s=document.querySelector('.sheet');if(!s||s.querySelector('#chefBuy'))return;const b=document.createElement('button');b.type='button';b.className='btn';b.id='chefBuy';b.textContent=`💎 Открыть за ⭐ ${(window.ACCESS&&ACCESS.price)||600}`;b.onclick=()=>{const bg=s.closest('.sheet-bg');if(bg)bg.remove();buyFull()};const last=s.querySelector('.btn');last?s.insertBefore(b,last):s.appendChild(b)},0)}
+  setTimeout(()=>{const s=document.querySelector('.sheet');if(!s||s.querySelector('#chefBuy'))return;const b=document.createElement('button');b.type='button';b.className='btn';b.id='chefBuy';b.textContent=window.ACCESS&&ACCESS.pay?`💎 Открыть за ${ACCESS.price||990} ₽`:'💳 Оплата картой — скоро';b.onclick=()=>{const bg=s.closest('.sheet-bg');if(bg)bg.remove();buyFull()};const last=s.querySelector('.btn');last?s.insertBefore(b,last):s.appendChild(b)},0)}
 const chefLocked=()=>useServer&&window.ACCESS&&!ACCESS.paid;
 function runChef(prompt){
   if(CHEF_BUSY)return;if(S.demo){toast('В примере ИИ-повар не работает 🙂');return}

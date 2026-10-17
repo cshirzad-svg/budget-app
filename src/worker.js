@@ -941,17 +941,36 @@ async function accessOf(env, owner) {
   if (admin === owner || (u && u.paid)) return { paid: true, active: true };
   let te = u && u.trialEnd;
   if (!te) { te = Date.now() + TRIAL_DAYS * 864e5; await reg.regUpdate(owner, { trialEnd: te }); }
-  return { paid: false, trialEnd: te, active: Date.now() < te };
+  // пока оплата картой не подключена, пробный период не блокирует
+  return { paid: false, trialEnd: te, active: !payOn(env) || Date.now() < te };
 }
+/* ---------- оплата картой через Robokassa (самозанятый, чеки в «Мой налог» автоматически) ---------- */
+const payOn = (env) => !!(env.ROBO_LOGIN && env.ROBO_PASS1 && env.ROBO_PASS2);
+const priceRub = (env) => Math.max(1, parseInt(env.PRICE_RUB || '990', 10) || 990);
+async function md5(s) { const d = await crypto.subtle.digest('MD5', new TextEncoder().encode(s)); return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join(''); }
+async function payLink(env, owner) {
+  const reg = store(env, '__registry__');
+  const inv = ((await reg.meta('inv_seq')) || 1000) + 1;
+  await reg.meta('inv_seq', inv);
+  const sum = priceRub(env).toFixed(2);
+  const sig = await md5(`${env.ROBO_LOGIN}:${sum}:${inv}:${env.ROBO_PASS1}:Shp_uid=${owner}`);
+  const q = new URLSearchParams({ MerchantLogin: env.ROBO_LOGIN, OutSum: sum, InvId: String(inv), Description: 'Бюджет в конвертах — полный доступ навсегда', SignatureValue: sig, Shp_uid: String(owner), Culture: 'ru' });
+  if (env.ROBO_TEST === '1') q.set('IsTest', '1');
+  return 'https://auth.robokassa.ru/Merchant/Index.aspx?' + q.toString();
+}
+async function payButtons(env, owner) {
+  return { inline_keyboard: [[{ text: `💳 Оплатить картой или СБП — ${priceRub(env)} ₽`, url: await payLink(env, owner) }]] };
+}
+const PAY_SOON = '💳 Оплата картой появится совсем скоро — я напишу, как только можно будет открыть полный доступ.';
 const priceStars = (env) => Math.max(1, parseInt(env.PRICE_STARS || '600', 10) || 600);
 const invoiceBody = (env, owner) => ({ title: 'Бюджет в конвертах — навсегда', description: 'Полный доступ к боту и приложению без ограничений: траты, конверты, ИИ-повар, напоминания, общий бюджет на двоих.', payload: 'full:' + owner, currency: 'XTR', prices: [{ label: 'Полный доступ', amount: priceStars(env) }], provider_token: '' });
 async function sendPaywall(env, chat, owner, acc) {
-  await tg(env, 'sendMessage', { chat_id: chat, text: `🔒 Пробный период закончился${acc && acc.trialEnd ? ' ' + new Date(acc.trialEnd).toLocaleDateString('ru-RU') : ''}.\n\nВсе твои записи сохранены. Чтобы продолжить вести бюджет, открой полный доступ навсегда — один раз, без подписки 👇` });
-  await tg(env, 'sendInvoice', { chat_id: chat, ...invoiceBody(env, owner) });
+  await tg(env, 'sendMessage', { chat_id: chat, text: `🔒 Пробный период закончился${acc && acc.trialEnd ? ' ' + new Date(acc.trialEnd).toLocaleDateString('ru-RU') : ''}.\n\nВсе твои записи сохранены. Чтобы продолжить вести бюджет, открой полный доступ навсегда — один раз, без подписки, ${priceRub(env)} ₽ 👇`, reply_markup: await payButtons(env, owner) });
 }
 async function chefLocked(env, chat, owner) {
-  await tg(env, 'sendMessage', { chat_id: chat, text: '👨‍🍳 ИИ-повар есть только в полной версии: меню на неделю под твой бюджет, список покупок и цена корзины.\n\nВсё остальное в пробном периоде работает. Открыть полный доступ навсегда — один раз, без подписки 👇' });
-  await tg(env, 'sendInvoice', { chat_id: chat, ...invoiceBody(env, owner) });
+  const head = '👨‍🍳 ИИ-повар есть только в полной версии: меню на неделю под твой бюджет, список покупок и цена корзины.\n\nВсё остальное в пробном периоде работает.';
+  if (!payOn(env)) { await tg(env, 'sendMessage', { chat_id: chat, text: head + '\n\n' + PAY_SOON }); return; }
+  await tg(env, 'sendMessage', { chat_id: chat, text: head + ` Полный доступ навсегда — ${priceRub(env)} ₽, один раз, без подписки 👇`, reply_markup: await payButtons(env, owner) });
 }
 async function botName(env) {
   const reg = store(env, '__registry__');
@@ -1182,7 +1201,7 @@ async function onUpdate(update, env, origin) {
     return;
   }
   if (/^\/?(paysupport|terms|поддержка)/i.test(text)) {
-    if (/^\/?terms/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: `📄 Условия: 7 дней бесплатно, дальше полный доступ навсегда за ⭐ ${priceStars(env)} (разовый платёж через Telegram Stars). Если что-то не работает — напиши «поддержка» и опиши проблему, ответим и при необходимости вернём оплату.` }); return; }
+    if (/^\/?terms/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: `📄 Условия: 7 дней бесплатно, дальше полный доступ навсегда за ${priceRub(env)} ₽ (разовый платёж картой или через СБП). Если что-то не работает — напиши «поддержка» и опиши проблему, ответим и при необходимости вернём оплату.` }); return; }
     const adm = await store(env, '__registry__').getAdmin(), body = text.replace(/^\/?(paysupport|поддержка)\s*/i, '');
     if (!body) { await tg(env, 'sendMessage', { chat_id: chat, text: '🛟 Опиши проблему одним сообщением, начиная со слова «поддержка». Например: «поддержка не проходит оплата».' }); return; }
     if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `🛟 Поддержка от ${msg.from.first_name || ''}${msg.from.username ? ' @' + msg.from.username : ''} (id ${uid}):\n\n${body.slice(0, 1500)}` });
@@ -1462,6 +1481,27 @@ export default {
       );
     }
 
+    if (url.pathname === '/pay/result') {
+      if (!payOn(env)) return new Response('off', { status: 404 });
+      const f = request.method === 'POST' ? await request.formData().catch(() => null) : null;
+      const g = (k) => (f && f.get(k)) || url.searchParams.get(k) || '';
+      const out = g('OutSum'), inv = g('InvId'), uid = g('Shp_uid'), sig = g('SignatureValue');
+      const ok = sig && (await md5(`${out}:${inv}:${env.ROBO_PASS2}:Shp_uid=${uid}`)).toLowerCase() === sig.toLowerCase();
+      if (!ok || !/^\d+$/.test(uid)) return new Response('bad sign', { status: 400 });
+      const reg = store(env, '__registry__');
+      const before = await reg.regGet(+uid);
+      if (!(before && before.paid && before.inv === inv)) {
+        await reg.regUpdate(+uid, { paid: true, paidAt: Date.now(), paidRub: +out, inv });
+        await tg(env, 'sendMessage', { chat_id: +uid, text: '💎 Оплата прошла! Полный доступ открыт навсегда. Спасибо, что ты с нами 🙌', reply_markup: appButton(origin) });
+        const adm = await reg.getAdmin();
+        if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `💰 Новая оплата: ${(before && before.name) || uid}${before && before.user ? ' @' + before.user : ''} — ${out} ₽ (счёт ${inv})` });
+      }
+      return new Response('OK' + inv, { headers: { 'content-type': 'text/plain' } });
+    }
+    if (url.pathname === '/pay/ok' || url.pathname === '/pay/fail') {
+      const good = url.pathname === '/pay/ok';
+      return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Бюджет в конвертах</title><body style="font:17px/1.5 system-ui,sans-serif;text-align:center;padding:48px 20px;background:#f6f3ff;color:#1d1b2e"><div style="font-size:64px">${good ? '💎' : '😕'}</div><h2>${good ? 'Оплата прошла!' : 'Оплата не прошла'}</h2><p>${good ? 'Полный доступ уже открыт. Возвращайся в Telegram — бот прислал подтверждение.' : 'Деньги не списаны. Вернись в Telegram и попробуй ещё раз.'}</p><p><a href="https://t.me/konverty_budget_bot" style="display:inline-block;background:#6d4cff;color:#fff;padding:12px 22px;border-radius:14px;text-decoration:none;font-weight:700">Вернуться в бот</a></p></body>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
     if (url.pathname === '/tg' && request.method === 'POST') {
       if (request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== (await webhookSecret(env.BOT_TOKEN))) {
         return new Response('forbidden', { status: 403 });
@@ -1531,8 +1571,8 @@ export default {
         return json({ ok: true });
       }
       if (b.act === 'invoice') {
-        const r2 = await tg(env, 'createInvoiceLink', invoiceBody(env, st.owner));
-        return json({ ok: !!r2.ok, link: r2.result || null });
+        if (!payOn(env)) return json({ ok: false, error: 'soon' });
+        return json({ ok: true, link: await payLink(env, st.owner) });
       }
       if (b.act === 'pic' && typeof b.png === 'string' && b.png.length < 6e6) {
         const bin = Uint8Array.from(atob(b.png.replace(/^data:image\/\w+;base64,/, '')), (c) => c.charCodeAt(0));
@@ -1569,7 +1609,7 @@ export default {
         const acc = await accessOf(env, st.owner);
         const mem = await store(env, st.owner).getMembers();
         const ou = await reg.regGet(st.owner);
-        return { ...acc, price: priceStars(env), me: user.id, owner: st.owner, isOwner: st.owner === user.id, members: [{ id: st.owner, name: (ou && ou.name) || '' }, ...mem.map((m) => ({ id: m.id, name: m.name }))] };
+        return { ...acc, price: priceRub(env), pay: payOn(env), me: user.id, owner: st.owner, isOwner: st.owner === user.id, members: [{ id: st.owner, name: (ou && ou.name) || '' }, ...mem.map((m) => ({ id: m.id, name: m.name }))] };
       };
       if (request.method === 'GET') {
         await reg.regUpdate(user.id, { seen: Date.now(), name: user.first_name || '', user: user.username || '' });

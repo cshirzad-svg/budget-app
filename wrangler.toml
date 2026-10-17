@@ -17,7 +17,7 @@ new_sqlite_classes = ["UserStore"]
 
 [vars]
 ORIGIN = "https://konverty.app/"
-PRICE_STARS = "600"
+PRICE_RUB = "990"
 
 [triggers]
 crons = ["*/5 * * * *"]
