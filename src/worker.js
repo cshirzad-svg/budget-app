@@ -1039,9 +1039,10 @@ async function onUpdate(update, env, origin) {
     await edit('📤 Отправляю…');
     const list = (await reg.regList()).filter((u) => u.uid !== admin && !u.blocked);
     let ok = 0, fail = 0;
-    for (const u of list) {
+    for (const u0 of list) {
+      const u = await reg.regUpdate(u0.uid, {});
       const r = await sendNews(env, u.uid, !!u.gift, origin);
-      if (r && r.ok) ok++; else { fail++; if (r && r.error_code === 403) await reg.regUpdate(u.uid, { blocked: true }); }
+      if (r && r.ok) { ok++; await reg.regUpdate(u.uid, { bcGot: BC_VER }); } else { fail++; if (r && r.error_code === 403) await reg.regUpdate(u.uid, { blocked: true }); }
       await new Promise((res) => setTimeout(res, 60));
     }
     await edit(`✅ Рассылка отправлена: ${ok} доставлено${fail ? `, ${fail} не дошло (бот заблокирован или чат удалён)` : ''}.`);
@@ -1236,7 +1237,8 @@ async function onUpdate(update, env, origin) {
   if (!text) return;
 
   const reg = store(env, '__registry__');
-  await reg.regUpdate(uid, { seen: Date.now(), name: msg.from.first_name || '', user: msg.from.username || '' });
+  const ru = await reg.regUpdate(uid, { seen: Date.now(), name: msg.from.first_name || '', user: msg.from.username || '' });
+  if (ru.gift && ru.bcGot !== BC_VER && (await reg.meta('bc:' + BC_VER))) { await reg.regUpdate(uid, { bcGot: BC_VER }); await sendNews(env, chat, true, origin); }
   const fi = foodIntent(text);
   if ((fi === 'menu' || fi === 'swap') && !(await accessOf(env, st.owner)).paid) { await chefLocked(env, chat, st.owner); return; }
   if (fi) {
