@@ -443,6 +443,44 @@ input[type=number]{-moz-appearance:textfield}
 .team-link{display:flex;gap:6px}
 .team-link input{flex:1;min-width:0;font-size:13px}
 .who{font-size:11px;color:var(--accent);font-weight:600}
+
+/* ---- v8: питомец и челленджи ---- */
+.pet{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:center}
+.pet-stage{position:relative;width:96px;height:96px;border-radius:24px;background:radial-gradient(circle at 50% 70%,var(--accent-soft),var(--soft));display:grid;place-items:center;overflow:hidden;cursor:pointer}
+.pet-e{line-height:1;transition:font-size .4s;display:block}
+.pet-e.happy{animation:pet-hop 1.8s ease-in-out infinite}
+.pet-e.sad{animation:pet-sway 3s ease-in-out infinite;filter:saturate(.6)}
+.pet-e.sleep{animation:pet-breathe 3.5s ease-in-out infinite;filter:saturate(.5) brightness(.9)}
+.pet-e.jump{animation:pet-jump .7s ease}
+.pet-acc{position:absolute;font-size:22px;line-height:1}
+.pet-acc.crown{top:4px;left:50%;transform:translateX(-50%) rotate(-8deg)}
+.pet-acc.zz{top:6px;right:8px;font-size:16px;animation:h-tw 2s ease-in-out infinite}
+.pet-acc.tear{top:22px;right:14px;font-size:14px}
+@keyframes pet-hop{0%,100%{transform:translateY(0)}40%{transform:translateY(-8px) scale(1.04,.96)}55%{transform:translateY(0) scale(.96,1.04)}}
+@keyframes pet-sway{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
+@keyframes pet-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+@keyframes pet-jump{0%{transform:translateY(0)}30%{transform:translateY(-26px) rotate(-10deg)}60%{transform:translateY(0) rotate(6deg)}80%{transform:translateY(-6px)}100%{transform:none}}
+.pet-say{background:var(--soft);border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.4;position:relative}
+.pet-meta{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px;color:var(--muted)}
+.pet-meta .lvbar{flex:1;margin:0}
+.pet-btns{display:flex;gap:8px;margin-top:8px}
+.pet-btns .btn{padding:9px 12px;font-size:14px}
+.petpick{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.petpick button{font-size:30px;border:2px solid var(--line);border-radius:14px;background:var(--paper);padding:8px 0;cursor:pointer}
+.petpick button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.chs{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;scroll-snap-type:x mandatory}
+.chs .ch{flex:0 0 78%;scroll-snap-align:start;background:var(--soft);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.ch .ce{font-size:28px;line-height:1}
+.ch b{font-size:15px}
+.ch p{margin:0;font-size:13px;color:var(--muted);line-height:1.4}
+.ch .btn{margin-top:auto}
+.chdays{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:8px 0}
+.chdays i{aspect-ratio:1;border-radius:10px;background:var(--soft);display:grid;place-items:center;font-style:normal;font-size:16px}
+.chdays i.ok{background:var(--good-soft)}
+.chdays i.bad{background:var(--bad-soft)}
+.chdays i.now{outline:2px solid var(--accent)}
+.ch-run b{font-family:var(--display);font-weight:500;font-size:18px}
+.ch-run .linkbtn{padding:0}
 /* пустой старт */
 .kpi .chip:not(.good):not(.bad){background:var(--soft);color:var(--muted)}
 .kpi[data-help]{cursor:pointer}.qi{opacity:.5;font-size:11px}
@@ -490,6 +528,8 @@ input[type=number]{-moz-appearance:textfield}
     </div>
     <div class="empty-start" id="emptyStart" hidden><b>👋 Здесь пока пусто</b><p>Запиши первую трату: напиши боту <code>кофе 300</code> или открой вкладку «🧾 Траты». Через пару трат здесь появятся графики.</p></div>
     <div class="card today-card" id="todayCard"><small id="tdLbl"></small><div class="big" id="tdBig"></div><div class="td-bar" id="tdBarW"><i id="tdBar"></i></div><p class="hint" id="tdSub" style="margin:0"></p><div class="td-subs" id="tdSubs"></div></div>
+ <div class="card" id="petCard"><div class="pet"><div class="pet-stage" id="petStage" role="button" aria-label="Питомец"><span class="pet-e" id="petE">🥚</span></div><div><div class="pet-say" id="petSay"></div><div class="pet-meta"><span id="petLv"></span><div class="lvbar"><i id="petBar"></i></div></div><div class="pet-btns" id="petBtns"></div></div></div></div>
+    <div class="card" id="chCard"><h2>🏁 Челлендж недели<button type="button" class="help" data-help="ch" aria-label="Что это?">?</button></h2><div id="chBody"></div></div>
     <div class="card game" id="gameCard" role="button" tabindex="0"><span class="fire" id="gFire">🔥</span><div><b id="gStreak"></b><small id="gLevel"></small><div class="lvbar"><i id="gBar"></i></div></div></div>
     <div class="card" id="insCard"><h2>💡 Подсказки<button type="button" class="help" data-help="ins" aria-label="Что это?">?</button></h2><div class="ins" id="ins"></div></div>
     <div class="mascot only-env"><span class="face" id="face">😎</span><div><b id="moodT"></b><p id="moodP"></p></div></div>
@@ -935,6 +975,7 @@ function render(){
   try{renderDaily(P,txP)}catch(e){console.error(e)}
   renderSubs();
   try{renderAccess();payOverlay()}catch(e){console.error(e)}
+  try{renderPet();renderCh()}catch(e){console.error(e)}
   try{renderGame()}catch(e){console.error(e)}
   renderTx(P,txP);
   save();
@@ -1114,7 +1155,7 @@ $('subsList').addEventListener('click',e=>{const b=e.target.closest('[data-sdel]
 const BADGES=[['first','✍️','Первый шаг','Первая запись'],['s3','🔥','Разогрев','3 дня подряд'],['s7','⚡','Неделя','7 дней подряд'],['s30','🌋','Железная привычка','30 дней подряд'],
  ['tx50','📒','Летописец','50 записей'],['tx200','📚','Архивариус','200 записей'],['ns3','🧘','Дзен','3 дня без трат за месяц'],['save','🐷','Копилка','Первый раз отложил'],
  ['save10','💰','Подушка','Отложено 10 000 ₽ всего'],['month','🏆','Уложился','Закрыл месяц в рамках плана'],['goal50','🎯','Полпути','Цель накоплена наполовину'],
- ['chef','👨‍🍳','Шеф','Меню от ИИ-повара'],['receipt','🧾','Фотограф','Трата по фото чека'],['shop','🛒','Без лишнего','Закрыл список покупок']];
+ ['chef','👨‍🍳','Шеф','Меню от ИИ-повара'],['receipt','🧾','Фотограф','Трата по фото чека'],['shop','🛒','Без лишнего','Закрыл список покупок'],['champ','🏁','Чемпион','Прошёл челлендж недели'],['pet','👑','Король копилки','Питомец вырос до короля']];
 const LEVELS=[[0,'Новичок'],[40,'Ученик'],[120,'Практик'],[300,'Профи'],[600,'Мастер бюджета']];
 function streakNow(){const days=new Set(S.tx.map(t=>t.date));((S.srv&&S.srv.ns)||[]).forEach(d=>days.add(d));
   let d=new Date(NOW),n=0;if(!days.has(dstr(d)))d=addDays(d,-1);while(days.has(dstr(d))){n++;d=addDays(d,-1)}return n}
@@ -1124,7 +1165,7 @@ function earned(){const st=streakNow(),n=S.tx.length,isS=t=>byId(t.env).save,fl=
   const plan=spendCats().reduce((a,e)=>a+(e.amt||0),0);let mo=false;
   if(plan&&S.mode!=='simple')for(let o=-1;o>=-6;o--){const Q=periodOf(o),l=S.tx.filter(t=>inP(t,Q)&&!isS(t));if(l.length>=5&&l.reduce((a,t)=>a+t.sum,0)<=plan){mo=true;break}}
   const g50=saveCats().some(c=>c.target&&((c.before||0)+S.tx.filter(t=>t.env===c.id).reduce((a,t)=>a+t.sum,0))>=c.target/2);
-  const B={first:n>=1,s3:st>=3,s7:st>=7,s30:st>=30,tx50:n>=50,tx200:n>=200,ns3:z>=3&&n>=5,save:S.tx.some(isS),save10:savedRub>=10000,month:mo,goal50:g50,chef:!!fl.chef,receipt:!!fl.receipt,shop:!!S.shopDone};
+  const B={first:n>=1,s3:st>=3,s7:st>=7,s30:st>=30,tx50:n>=50,tx200:n>=200,ns3:z>=3&&n>=5,save:S.tx.some(isS),save10:savedRub>=10000,month:mo,goal50:g50,chef:!!fl.chef,receipt:!!fl.receipt,shop:!!S.shopDone,champ:(S.chDone||[]).some(c=>c.won),pet:!!(S.pet&&petStage().i>=3)};
   return {st,ids:BADGES.filter(b=>B[b[0]]).map(b=>b[0])}}
 function renderGame(){
   if(S.demo){$('gameCard').hidden=true;return}$('gameCard').hidden=false;
@@ -1269,6 +1310,127 @@ $('impFile').addEventListener('change',e=>{const f=e.target.files[0];e.target.va
         save();render();burst(['📥','✨','📊'],null,null,20);toast(`📥 Загружено трат: ${n}. Проверь категории во вкладке «Траты»`)}
       bg.remove()})
   }).catch(()=>toast('😕 Не получилось прочитать файл'))});
+
+/* ---------- питомец-копилка ---------- */
+const PETS=[['pig','🐷','Хрюша'],['cat','🐱','Мурка'],['dog','🐶','Бублик'],['hamster','🐹','Пухляш'],['dragon','🐲','Дракоша']];
+const STAGES=['Малыш','Подросток','Взрослый','Король'];
+function petStage(){
+  const sc=saveCats(),goal=sc.find(c=>c.target>0);
+  let p;
+  if(goal){const have=(goal.before||0)+S.tx.filter(t=>t.env===goal.id).reduce((a,t)=>a+t.sum,0);p=have/goal.target}
+  else{const tot=S.tx.filter(t=>byId(t.env).save).reduce((a,t)=>a+(conv(t.sum,S.cur,'RUB')||0),0);p=tot/50000}
+  const i=p>=1?3:p>=.5?2:p>=.25?1:0;return{i,p:Math.max(0,Math.min(1,p)),goal}}
+function petMood(){
+  const last=S.tx.map(t=>t.date).sort().pop();
+  if(!last)return'new';if((NOW-dparse(last))/864e5>=3)return'sleep';
+  if(S.mode!=='simple'){const P=periodOf(0),plan=spendCats().reduce((a,e)=>a+(e.amt||0),0),sp=S.tx.filter(t=>inP(t,P)&&!byId(t.env).save).reduce((a,t)=>a+t.sum,0);if(plan&&P.elapsed>2&&sp/P.elapsed*P.days>plan*1.05)return'sad'}
+  return'happy'}
+function renderPet(){
+  const card=$('petCard');if(S.demo){card.hidden=true;return}card.hidden=false;
+  if(!S.pet){$('petE').textContent='🥚';$('petE').className='pet-e happy';$('petE').style.fontSize='44px';
+    $('petSay').textContent='В копилке кто-то живёт! Заведи питомца: он будет расти, когда ты откладываешь деньги.';
+    $('petLv').textContent='';$('petBar').parentNode.hidden=true;$('petBtns').innerHTML='<button type="button" class="btn" data-pet="new">🐣 Завести питомца</button>';return}
+  const k=PETS.find(x=>x[0]===S.pet.kind)||PETS[0],st=petStage(),mood=petMood(),nm=esc(S.pet.name||k[2]);
+  const e=$('petE');e.textContent=k[1];e.style.fontSize=[40,52,62,64][st.i]+'px';if(!e.classList.contains('jump'))e.className='pet-e '+(mood==='new'?'happy':mood);
+  $('petStage').querySelectorAll('.pet-acc').forEach(x=>x.remove());
+  const acc=(c,t)=>{const a=document.createElement('span');a.className='pet-acc '+c;a.textContent=t;$('petStage').appendChild(a)};
+  if(st.i>=3)acc('crown','👑');if(mood==='sleep')acc('zz','💤');if(mood==='sad')acc('tear','💧');
+  const SAY={happy:[`${nm} в восторге: ты молодец! 🥰`,`${nm} растёт, когда ты откладываешь. Покормишь?`,`${nm} в хорошем настроении — бюджет в порядке.`],
+    sad:[`${nm} грустит: в этом месяце тратим быстрее плана 😢`,`${nm} переживает за бюджет. Давай пару дней поэкономим?`],
+    sleep:[`${nm} спит 💤 Ты давно ничего не записывал. Разбуди тратой или напиши боту «кофе 300».`],
+    new:[`Привет, я ${nm}! Я расту, когда ты откладываешь деньги. Нажми «Покормить» 🍎`]};
+  const arr=SAY[mood];$('petSay').textContent=arr[new Date().getDate()%arr.length];
+  $('petBar').parentNode.hidden=false;const TH=[0,.25,.5,1];$('petBar').style.width=(st.i>=3?100:Math.max(4,(st.p-TH[st.i])/(TH[st.i+1]-TH[st.i])*100))+'%';
+  $('petLv').textContent=`${STAGES[st.i]}${st.i<3?' → '+STAGES[st.i+1]:''}`;
+  $('petBtns').innerHTML='<button type="button" class="btn" data-pet="feed">🍎 Покормить</button><button type="button" class="btn ghost" data-pet="edit" aria-label="Настроить питомца">✏️</button>';
+}
+function petSheet(){
+  let kind=(S.pet&&S.pet.kind)||'pig';
+  const bg=document.createElement('div');bg.className='sheet-bg';
+  bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><h3>🐣 Твой питомец-копилка</h3><p>Выбери, кто будет жить в копилке, и дай имя.</p>
+  <div class="petpick">${PETS.map(p=>`<button type="button" data-k="${p[0]}" aria-pressed="${p[0]===kind}">${p[1]}</button>`).join('')}</div>
+  <input type="text" id="petName" maxlength="20" placeholder="Имя" value="${esc((S.pet&&S.pet.name)||(PETS.find(p=>p[0]===kind)||PETS[0])[2])}">
+  <button type="button" class="btn" data-b="ok">Готово</button></div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click',e=>{const k=e.target.closest('[data-k]');if(k){kind=k.dataset.k;bg.querySelectorAll('[data-k]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.k===kind));
+      const n=bg.querySelector('#petName');if(!S.pet||!n.value||PETS.some(p=>p[2]===n.value))n.value=PETS.find(p=>p[0]===kind)[2];return}
+    if(e.target.closest('[data-b=ok]')){const first=!S.pet;S.pet={kind,name:bg.querySelector('#petName').value.trim()||PETS.find(p=>p[0]===kind)[2]};save();bg.remove();render();
+      if(first){burst([PETS.find(p=>p[0]===kind)[1],'💖','✨'],null,null,20);toast(`🎉 Знакомься: ${S.pet.name}! Корми его, откладывая деньги`)}return}
+    if(e.target===bg)bg.remove()});
+}
+function petFeed(){
+  let sc=saveCats()[0];
+  const bg=document.createElement('div');bg.className='sheet-bg';
+  bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><h3>🍎 Покормить ${esc(S.pet.name)}</h3><p>Сколько отложить${sc?` в «${esc(sc.name)}»`:' в копилку'}?</p>
+  <div class="qchips">${[100,500,1000,5000].map(v=>`<button type="button" data-v="${v}">${fmt(v)}</button>`).join('')}</div>
+  <input type="number" id="feedIn" inputmode="decimal" placeholder="Своя сумма, ${sym(S.cur)}"><button type="button" class="btn" data-b="ok">Отложить</button></div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click',e=>{const v=e.target.closest('[data-v]');if(v){bg.querySelector('#feedIn').value=v.dataset.v;return}
+    if(e.target.closest('[data-b=ok]')){const n=parseFloat(bg.querySelector('#feedIn').value);if(!(n>0)){toast('Выбери сумму');return}
+      if(!sc){sc={id:'safe',ic:'🐷',name:'Копилка',c:COLORS[S.cats.length%COLORS.length],save:true,amt:0,target:0,before:0};S.cats.push(sc);buildCats()}
+      const before=petStage().i,t=mkTx(n,S.cur,sc.id,TODAYS,'Покормил питомца');if(t)S.tx.push(t);save();bg.remove();render();
+      const e2=$('petE');e2.className='pet-e jump';setTimeout(()=>{e2.className='pet-e happy'},750);
+      const after=petStage().i;burst(['💖','🍎','✨','🪙'],null,null,18);
+      toast(after>before?`🎉 ${S.pet.name} вырос: теперь ${STAGES[after].toLowerCase()}!`:`💖 ${S.pet.name} доволен! +${fmt(n)} в копилке`);return}
+    if(e.target===bg)bg.remove()});
+}
+$('petBtns').addEventListener('click',e=>{const b=e.target.closest('[data-pet]');if(!b)return;if(b.dataset.pet==='feed')petFeed();else petSheet()});
+$('petStage').addEventListener('click',()=>{if(!S.pet){petSheet();return}const e=$('petE');e.className='pet-e jump';haptic('ok');burst(['💖'],null,null,6);setTimeout(()=>{e.className='pet-e '+(petMood()==='new'?'happy':petMood())},750)});
+/* ---------- челленджи ---------- */
+const CHS=[
+ {id:'nodeliv',e:'🛵',t:'Неделя без доставки',d:'7 дней не заказываем еду. Готовим сами или едим что есть.',ban:/доставк|самокат|яндекс ?еда|delivery|деливери|заказ еды|роллы на дом|wolt|uber ?eats/i},
+ {id:'coffee',e:'☕',t:'Кофе дома',d:'7 дней без кофе навынос. Варим дома, носим с собой.',ban:/кофе|coffee|латте|капучино|раф|американо|старбакс|starbucks|кофейн/i},
+ {id:'food',e:'🛒',t:'Еда в рамках',d:'Потратить на продукты за неделю не больше лимита.',lim:true},
+ {id:'zero',e:'🧘',t:'3 дня без трат',d:'За 7 дней устроить хотя бы 3 дня, когда не тратишь ничего.',zero:3},
+ {id:'save10',e:'🐷',t:'Отложи 10%',d:'За неделю отложить в копилку 10% месячного дохода.',save:true}];
+const chDef=id=>CHS.find(c=>c.id===id);
+function foodCatId(){const c=S.cats.find(x=>x.id==='food')||S.cats.find(x=>/прод|еда/i.test(x.name));return c&&c.id}
+function chEval(){
+  const ch=S.ch;if(!ch)return null;const d=chDef(ch.id),start=dparse(ch.start),days=[];let fail=null,val=0;
+  const spT=S.tx.filter(t=>!byId(t.env).save);
+  for(let i=0;i<7;i++){const ds=dstr(addDays(start,i)),fut=ds>TODAYS,list=S.tx.filter(t=>t.date===ds);let st=fut?'':'ok';
+    if(!fut){if(d.ban){const v=list.find(t=>!byId(t.env).save&&d.ban.test((t.note||'')+' '+byId(t.env).name));if(v){st='bad';fail=fail||v}}
+      if(d.zero&&list.some(t=>!byId(t.env).save))st='spent'}
+    days.push({ds,st,today:ds===TODAYS})}
+  const end=dstr(addDays(start,6)),done=TODAYS>end;
+  if(d.lim){const fid=foodCatId();val=spT.filter(t=>t.env===fid&&t.date>=ch.start&&t.date<=end).reduce((a,t)=>a+t.sum,0);if(val>ch.goal)fail=fail||{note:'лимит превышен',sum:val}}
+  if(d.zero){val=days.filter(x=>x.st==='ok').length;days.forEach(x=>{if(x.st==='spent')x.st='mid'})}
+  if(d.save){val=S.tx.filter(t=>byId(t.env).save&&t.date>=ch.start&&t.date<=end).reduce((a,t)=>a+t.sum,0)}
+  let won=false;if(!fail){if(d.ban)won=done;else if(d.lim)won=done&&val<=ch.goal;else if(d.zero)won=val>=d.zero;else if(d.save)won=val>=ch.goal}
+  if(done&&!won&&!fail)fail={note:d.zero?`без трат только ${val} дн.`:d.save?`отложено ${fmt(val)} из ${fmt(ch.goal)}`:'не вышло',sum:0};
+  return{d,days,fail,won,val,dayN:Math.min(7,Math.floor((NOW-start)/864e5)+1),end}}
+function chSaved(id){const d=chDef(id);if(!d.ban)return 0;const from=dstr(addDays(NOW,-35)),to=dstr(addDays(NOW,-7));
+  return S.tx.filter(t=>t.date>=from&&t.date<to&&!byId(t.env).save&&d.ban.test((t.note||'')+' '+byId(t.env).name)).reduce((a,t)=>a+t.sum,0)/4}
+function renderCh(){
+  const card=$('chCard');if(S.demo){card.hidden=true;return}card.hidden=false;
+  const ev=chEval();
+  if(ev&&ev.won&&S.ch.status!=='won'){S.ch.status='won';S.chDone=[...(S.chDone||[]),{id:S.ch.id,end:TODAYS,won:true,saved:Math.round(chSaved(S.ch.id))}];save();
+    setTimeout(()=>{burst(['🏁','🏆','🎉','✨'],null,null,30);const sv=chSaved(S.ch.id);sheet(`🏆 Челлендж пройден!`,`«${ev.d.t}» — 7 дней позади. Ты получил значок 🏁 «Чемпион».${sv>0?` По сравнению с обычной неделей ты сохранил примерно <b>${fmt(sv)}</b>.`:''}`,'Возьмёшь следующий челлендж?')},600)}
+  if(!S.ch||S.ch.status==='won'||S.ch.status==='quit'){
+    const doneN=(S.chDone||[]).filter(c=>c.won).length;
+    $('chBody').innerHTML=(doneN?`<p class="hint" style="margin:0 0 8px">🏆 Пройдено челленджей: ${doneN}</p>`:'')+`<div class="chs">${CHS.map(c=>`<div class="ch"><span class="ce">${c.e}</span><b>${c.t}</b><p>${c.d}</p><button type="button" class="btn" data-ch="${c.id}">Принять</button></div>`).join('')}</div>`;return}
+  const {d,days,fail,dayN,val}=ev;
+  const icon=x=>x.st==='ok'?'✅':x.st==='bad'?'❌':x.st==='mid'?'·':'';
+  let txt='';
+  if(fail)txt=`😬 Сорвалось${fail.note?`: ${esc(String(fail.note))}`:''}${fail.sum?` — ${fmt(fail.sum)}`:''}${fail.date?` (${dparse(fail.date).getDate()} ${MON3[dparse(fail.date).getMonth()]})`:''}. Бывает! Начнём заново?`;
+  else if(d.lim)txt=`Потрачено на продукты ${fmt(val)} из ${fmt(S.ch.goal)}. Осталось ${fmt(Math.max(0,S.ch.goal-val))}.`;
+  else if(d.zero)txt=`Дней без трат: ${val} из ${d.zero}. Сегодня можно сделать ещё один 💪`;
+  else if(d.save)txt=`Отложено ${fmt(val)} из ${fmt(S.ch.goal)}.`;
+  else txt=dayN>=7?'Последний день! Продержись 🔥':`День ${dayN} из 7 — держишься! 🔥`;
+  $('chBody').innerHTML=`<div class="ch-run"><b>${d.e} ${d.t}</b><div class="chdays">${days.map(x=>`<i class="${x.st==='ok'?'ok':x.st==='bad'?'bad':''}${x.today?' now':''}">${icon(x)}</i>`).join('')}</div><p class="hint" style="margin:0 0 8px">${txt}</p>
+    ${fail?`<div class="btn-row"><button type="button" class="btn" data-chr="1">🔄 Заново</button><button type="button" class="btn ghost" data-chq="1">Другой</button></div>`:'<button type="button" class="linkbtn" data-chq="1">Сдаться</button>'}</div>`;
+}
+$('chBody').addEventListener('click',e=>{
+  const a=e.target.closest('[data-ch]');
+  if(a){const id=a.dataset.ch,d=chDef(id);let goal=0;
+    if(d.lim){const fid=foodCatId(),f=fid&&byId(fid);goal=Math.round(((f&&f.amt?f.amt/4.345:conv(3000,'RUB',S.cur))*0.85)/100)*100||3000}
+    if(d.save){goal=Math.round(((S.income||conv(60000,'RUB',S.cur))*0.1)/100)*100}
+    S.ch={id,start:TODAYS,goal,status:'active'};save();render();burst([d.e,'🏁','✨'],null,null,14);
+    toast(`🏁 Принято: «${d.t}». Вечером бот напомнит, как дела`);return}
+  if(e.target.closest('[data-chr]')){S.ch={...S.ch,start:TODAYS,status:'active'};save();render();toast('🔄 Начинаем заново. У тебя получится!');return}
+  if(e.target.closest('[data-chq]')){const b=e.target.closest('[data-chq]');if(!b.classList.contains('armed')&&!/Другой/.test(b.textContent)){b.classList.add('armed');b.textContent='Точно сдаться?';return}
+    S.chDone=[...(S.chDone||[]),{id:S.ch.id,end:TODAYS,won:false}];S.ch={...S.ch,status:'quit'};save();render()}
+});
 function renderHistory(){
   const rows=[];
   for(let o=0;o>=-5;o--){const P=periodOf(o),t=S.tx.filter(x=>inP(x,P));
@@ -1627,6 +1789,8 @@ function exitDemo(silent){
 
 /* ---------- подсказки «?» ---------- */
 const HELP={
+  ch:['🏁 Челленджи','Выбери задание на 7 дней: например, неделю без доставки или кофе только дома. Я каждый день проверяю твои траты и отмечаю прогресс, вечером бот напомнит, как дела.','Сорвался — не страшно: можно начать заново. За пройденный челлендж получишь значок и узнаешь, сколько сэкономил.'],
+  pet:['🐷 Питомец-копилка','Твой питомец растёт, когда ты откладываешь деньги: малыш → подросток → взрослый → король 👑. Радуется, когда укладываешься в план, грустит при перерасходе и засыпает, если ты долго ничего не записываешь.','Кнопка «Покормить» — это быстро отложить деньги в копилку.'],
   imp:['📥 Выписка из банка','В приложении или на сайте банка найди выписку по карте и сохрани её в формате CSV (иногда пишут «Excel / CSV»). Потом выбери этот файл здесь.','Я возьму только списания, разнесу их по категориям по описанию и категории банка. Переводы людям по умолчанию не добавляю: это не всегда траты. Повторная загрузка того же файла дублей не создаст.'],
   team:['👫 Общий бюджет','Пригласи партнёра по ссылке, и вы будете вести один бюджет на двоих: общие конверты, цели и траты. Каждый пишет траты своему боту, всё сходится в одном месте. Видно, кто что записал.','В бюджете может быть 2 человека: ты и ещё один.'],
   chef:['👨‍🍳 ИИ-повар','Напиши, что хочешь есть: кухню, продукты, сколько времени готовить. ИИ составит меню на 7 дней и список покупок под твой бюджет на еду. Не нравится блюдо — жми 🔄 рядом с ним.','То же самое можно писать боту в чат: «меню на неделю, китайская кухня», «не люблю грибы», «замени ужин в среду».'],
@@ -1666,6 +1830,8 @@ document.addEventListener('click',e=>{const h=e.target.closest('[data-help]');if
 const TOUR=[
   ['.modes','Два режима','💌 Конверты — делишь доход и следишь за остатками. 🧾 Просто учёт — только записываешь траты. Переключай, когда хочешь.'],
   ['#t-over','📊 Обзор','Главное за месяц: сколько потрачено, сколько можно в день, куда уходят деньги.'],
+  ['#petCard','🐷 Питомец-копилка','Здесь живёт твой питомец. Он растёт, когда ты откладываешь деньги, и грустит, если тратишь быстрее плана.'],
+  ['#chCard','🏁 Челлендж недели','Возьми задание на 7 дней, например «неделя без доставки». Я буду отмечать прогресс каждый день.'],
   ['#gameCard','🔥 Серия и значки','Записывай траты каждый день: растёт серия, открываются значки и уровни. Нажми, чтобы посмотреть все.'],
   ['#todayCard','☀️ Можно сегодня','Главная цифра дня: сколько ещё можно потратить сегодня, чтобы уложиться в месяц.'],
   ['#t-env','✉️ Конверты','Твои конверты или категории: суммы, копилки, цели. Тут же можно добавить свою категорию.'],

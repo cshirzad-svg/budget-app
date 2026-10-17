@@ -387,13 +387,22 @@ export function morningText(state) {
   if (!(state.tx || []).length) return '☀️ Доброе утро! Не забывай записывать траты: просто напиши мне, например, <code>кофе 300</code>.';
   return `☀️ Доброе утро! Вчера ушло ${fmt(ySpent, main)}.\nЗа месяц: ${fmt(spent, main)}.`;
 }
+const CH_SRV = { nodeliv: ['🛵 Неделя без доставки', /доставк|самокат|яндекс ?еда|delivery|деливери|заказ еды|wolt/i], coffee: ['☕ Кофе дома', /кофе|coffee|латте|капучино|раф|американо|starbucks|кофейн/i], food: ['🛒 Еда в рамках'], zero: ['🧘 3 дня без трат'], save10: ['🐷 Отложи 10%'] };
+function chLine(state) {
+  const ch = state.ch; if (!ch || ch.status !== 'active' || !CH_SRV[ch.id]) return '';
+  const [t, ban] = CH_SRV[ch.id], n = Math.floor((todayUTC(state) - Date.parse(ch.start + 'T00:00:00Z')) / 864e5) + 1;
+  if (n < 1 || n > 7) return '';
+  if (ban && (state.tx || []).some((x) => txDate(x) >= ch.start && ban.test(x.note || ''))) return `\n\n🏁 ${t}: похоже, сорвалось 😬 Открой приложение и начни заново — получится!`;
+  return `\n\n🏁 ${t}: день ${n} из 7${n === 7 ? ' — последний, продержись!' : ' — держишься! 🔥'}`;
+}
 export function eveningText(state) {
   const main = state.cur || 'RUB', today = todayStr(state);
   const isSave = (t) => catInfo(t.env, state).save;
   const list = (state.tx || []).filter((t) => txDate(t) === today && !isSave(t));
   if (!list.length) {
     const st = streakOf(state);
-    return { text: st >= 2 ? `🌙 Сегодня ни одной записи. 🔥 Серия ${st} дн. под угрозой! День без трат или забыл записать?` : '🌙 Сегодня ни одной записи. День без трат или забыл записать?', empty: true };
+    const pet = state.pet && state.pet.name ? `\n${state.pet.name} скучает и ждёт новостей 💤` : '';
+    return { text: (st >= 2 ? `🌙 Сегодня ни одной записи. 🔥 Серия ${st} дн. под угрозой! День без трат или забыл записать?` : '🌙 Сегодня ни одной записи. День без трат или забыл записать?') + pet + chLine(state), empty: true };
   }
   const by = {};
   list.forEach((t) => { by[t.env] = (by[t.env] || 0) + t.sum; });
@@ -405,7 +414,7 @@ export function eveningText(state) {
     const daysLeft = Math.max(1, P.days - P.elapsed);
     text += left > 0 ? `\n\nЗавтра можно до ${fmt(left / daysLeft, main)}.` : `\n\n😬 Бюджет месяца превышен на ${fmt(-left, main)}.`;
   }
-  return { text: text + '\n\nВсё записал? 🙂', empty: false };
+  return { text: text + chLine(state) + '\n\nВсё записал? 🙂', empty: false };
 }
 /* ---------- «напомни …» ---------- */
 const WD = [['воскресень', 0], ['понедельник', 1], ['вторник', 2], ['сред', 3], ['четверг', 4], ['пятниц', 5], ['суббот', 6]];
