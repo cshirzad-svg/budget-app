@@ -156,6 +156,19 @@ export class UserStore extends DurableObject {
   }
   async remSent(id, del) { const v = await this.ctx.storage.get('rs:' + id); if (del) await this.ctx.storage.delete('rs:' + id); return v || null; }
   async setPending(p) { await this.ctx.storage.put('pending', p); }
+  /* скрины выписок, ожидающие подтверждения */
+  async shotPut(id, o) { await this.ctx.storage.put('shot:' + id, o); const m = await this.ctx.storage.list({ prefix: 'shot:' }); const ks = [...m.keys()].sort(); while (ks.length > 8) await this.ctx.storage.delete(ks.shift()); }
+  async shotGet(id) { return (await this.ctx.storage.get('shot:' + id)) || null; }
+  async shotToggle(id, i) { const o = await this.ctx.storage.get('shot:' + id); if (!o || !o.items[i]) return o || null; o.items[i].on = !o.items[i].on; await this.ctx.storage.put('shot:' + id, o); return o; }
+  async shotDel(id) { const o = await this.ctx.storage.get('shot:' + id); await this.ctx.storage.delete('shot:' + id); return o || null; }
+  async addTxs(list) {
+    const s = (await this.ctx.storage.get('state')) || {};
+    const have = new Set((s.tx || []).map((t) => t.imp).filter(Boolean));
+    const add = list.filter((t) => !t.imp || !have.has(t.imp));
+    s.tx = [...(s.tx || []), ...add];
+    await this.ctx.storage.put('state', s);
+    return { state: s, added: add };
+  }
   async takePending() {
     const p = await this.ctx.storage.get('pending');
     await this.ctx.storage.delete('pending');
@@ -240,6 +253,7 @@ export async function checkInitData(initData, token) {
 
 /* ---------- даты ---------- */
 const pad2 = (n) => String(n).padStart(2, '0');
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const ymd = (d) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 // «локальное сейчас» пользователя: UTC-поля этой даты = его местное время
 function localNow(state) {
@@ -428,7 +442,7 @@ export function eveningText(state) {
   if (!list.length) {
     const st = streakOf(state);
     const pet = state.pet && state.pet.name ? `\n${state.pet.name} скучает и ждёт новостей 💤` : '';
-    return { text: (st >= 2 ? `🌙 Сегодня ни одной записи. 🔥 Серия ${st} дн. под угрозой! День без трат или забыл записать?` : '🌙 Сегодня ни одной записи. День без трат или забыл записать?') + pet + chLine(state), empty: true };
+    return { text: (st >= 2 ? `🌙 Сегодня ни одной записи. 🔥 Серия ${st} дн. под угрозой! День без трат или забыл записать?` : '🌙 Сегодня ни одной записи. День без трат или забыл записать?') + '\n📸 Можно просто скинуть скрин истории операций из банка — запишу сам.' + pet + chLine(state), empty: true };
   }
   const by = {};
   list.forEach((t) => { by[t.env] = (by[t.env] || 0) + t.sum; });
@@ -440,7 +454,7 @@ export function eveningText(state) {
     const daysLeft = Math.max(1, P.days - P.elapsed);
     text += left > 0 ? `\n\nЗавтра можно до ${fmt(left / daysLeft, main)}.` : `\n\n😬 Бюджет месяца превышен на ${fmt(-left, main)}.`;
   }
-  return { text: text + chLine(state) + '\n\nВсё записал? 🙂', empty: false };
+  return { text: text + chLine(state) + '\n\nВсё записал? Платил картой или Алипеем — скинь скрин истории операций, я разнесу сам 📸', empty: false };
 }
 /* ---------- «напомни …» ---------- */
 const WD = [['воскресень', 0], ['понедельник', 1], ['вторник', 2], ['сред', 3], ['четверг', 4], ['пятниц', 5], ['суббот', 6]];
@@ -820,6 +834,78 @@ export async function readReceipt(env, bytes) {
   const v = r && (r.response || r.description);
   return pickJSON(typeof v === 'string' ? v : JSON.stringify(v || ''));
 }
+/* скрин истории операций (Alipay, WeChat, Сбер, Т-Банк…) */
+const VISION2 = ['@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct'];
+function b64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+const SHOT_PROMPT = 'Это скриншот. Это может быть список операций из банка или кошелька (Alipay, WeChat Pay, Сбер, Т-Банк и т.п.), фото кассового чека или что-то другое.\n' +
+  'Если это СПИСОК ОПЕРАЦИЙ, перепиши КАЖДУЮ операцию, которую видно целиком, сверху вниз. Итоги месяца в шапке («Expenses», «Income», «Расходы за месяц») НЕ включай. Ответь ТОЛЬКО JSON:\n' +
+  '{"type":"list","cur":"CNY","items":[{"d":"дата как на экране: 10-14, Today, Yesterday, Сегодня, Вчера, 14 октября","t":"время ЧЧ:ММ или пусто","m":"получатель или описание как на экране","a":-12.90,"k":"одно слово из: продукты, кафе, доставка, такси, транспорт, аптека, одежда, быт, связь, развлечения, перевод, другое","n":"коротко по-русски, 1–3 слова: «Такси DiDi», «Кофе Luckin», «Аренда пауэрбанка»"}]}\n' +
+  'a — расход со знаком минус, поступление со знаком плюс. cur — валюта: ¥ или Alipay/WeChat — CNY, ₽ или Сбер/Т-Банк — RUB, $ — USD.\n' +
+  'Подсказки: 打车/快车/滴滴 — такси; 充电宝 — аренда пауэрбанка (быт); 外卖 — доставка; 订单付款 с категорией Food — кафе; Transfer/转账 — перевод.\n' +
+  'Если это ЧЕК — ответь {"type":"receipt"}. Если ни то ни другое — {"type":"other"}.';
+async function visionRun(env, model, prompt, bytes) {
+  const r = await env.AI.run(model, { messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + b64(bytes) } }] }], max_tokens: 2500, temperature: 0.1 });
+  const v = r && (r.response !== undefined ? r.response : r.result && r.result.response);
+  return typeof v === 'string' ? v : JSON.stringify(v || '');
+}
+export async function readShot(env, bytes) {
+  for (const m of VISION2) {
+    try { const j = pickJSON(await visionRun(env, m, SHOT_PROMPT, bytes)); if (j && j.type) return j; } catch (e) { console.error('shot', m, e && e.message); }
+  }
+  return null;
+}
+const MONR = ['янв', 'фев', 'мар', 'апр', 'ма', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+export function shotDate(d, state) {
+  const today = todayStr(state), x = String(d || '').toLowerCase().trim();
+  const yest = ymd(new Date(todayUTC(state) - 864e5));
+  if (!x || /today|сегодня|今天/.test(x)) return today;
+  if (/yesterday|вчера|昨天/.test(x)) return yest;
+  const Y = +today.slice(0, 4);
+  const mk = (y, m, dd) => { if (!(m >= 1 && m <= 12 && dd >= 1 && dd <= 31)) return null; let s = `${y}-${pad2(m)}-${pad2(dd)}`; if (s > today) s = `${y - 1}-${pad2(m)}-${pad2(dd)}`; return s; };
+  let m;
+  if ((m = x.match(/(\d{4})[-./年](\d{1,2})[-./月](\d{1,2})/))) return mk(+m[1], +m[2], +m[3]);
+  if ((m = x.match(/(\d{1,2})月(\d{1,2})/))) return mk(Y, +m[1], +m[2]);
+  if ((m = x.match(/(\d{1,2})[-/](\d{1,2})/))) return mk(Y, +m[1], +m[2]);
+  if ((m = x.match(/(\d{1,2})\.(\d{1,2})/))) return mk(Y, +m[2], +m[1]);
+  if ((m = x.match(/(\d{1,2})\s*([а-я]+)/))) { const i = MONR.findIndex((r) => m[2].startsWith(r)); if (i >= 0) return mk(Y, i + 1, +m[1]); }
+  return today;
+}
+const SHOT_K = { 'продукты': 'продукты', 'кафе': 'кафе', 'доставка': 'доставка', 'такси': 'такси', 'транспорт': 'метро', 'аптека': 'аптека', 'одежда': 'одежда', 'быт': 'быт', 'связь': 'связь', 'развлечения': 'кино' };
+export function shotItems(j, state) {
+  const cur = CURS[String(j.cur || '').toUpperCase()] ? String(j.cur).toUpperCase() : state.cur || 'RUB';
+  const cats = getCats(state), spend = cats.filter((c) => !c.save);
+  const fallback = (detectEnv('прочее', state)) || (spend[0] || cats[0] || { id: 'other' }).id;
+  const tx = state.tx || [], keys = new Set(tx.map((t) => t.imp).filter(Boolean));
+  const items = [], seen = new Set();
+  let income = 0;
+  for (const it of (Array.isArray(j.items) ? j.items : []).slice(0, 40)) {
+    const a = +String(it.a ?? '').replace(/\s/g, '').replace(',', '.').replace(/[^\d.+-]/g, '');
+    if (!Number.isFinite(a) || a === 0) continue;
+    if (a > 0) { income += a; continue; }
+    const amt = Math.round(-a * 100) / 100, date = shotDate(it.d, state), time = /^\d{1,2}:\d{2}$/.test(String(it.t || '').trim()) ? String(it.t).trim().padStart(5, '0') : '';
+    const imp = `shot:${date}:${time}:${amt.toFixed(2)}`;
+    if (seen.has(imp)) continue; seen.add(imp);
+    const k = String(it.k || '').toLowerCase().trim();
+    const note = String(it.n || it.m || 'Покупка').replace(/[«»"]/g, '').slice(0, 40);
+    const env = (k === 'перевод' ? null : detectEnv(`${SHOT_K[k] || ''} ${note}`.trim(), state)) || fallback;
+    const dup = keys.has(imp) ? 'imp' : tx.some((t) => txDate(t) === date && (t.cur || state.cur) === cur && Math.abs((t.orig ?? t.sum) - amt) < 0.01) ? 'soft' : '';
+    items.push({ date, time, amt, note, env, imp, dup, on: !dup && k !== 'перевод' });
+  }
+  return { cur, items: items.slice(0, 24), income: Math.round(income * 100) / 100 };
+}
+const money2 = (v, c) => (v % 1 ? fmt(Math.floor(v), c).replace(/(\d)(\D*)$/, `$1,${String(Math.round((v % 1) * 100)).padStart(2, '0')}$2`) : fmt(v, c));
+export function shotView(o, state) {
+  const cats = (id) => catInfo(id, state);
+  const on = o.items.filter((x) => x.on), total = on.reduce((a, x) => a + x.amt, 0);
+  let t = `📸 <b>Нашёл на скрине ${o.items.length} ${o.items.length === 1 ? 'трату' : o.items.length < 5 ? 'траты' : 'трат'}</b>\n\n`;
+  t += o.items.map((x, i) => `${x.on ? '✅' : '▫️'} ${i + 1}. ${dateHuman(x.date, state)}${x.time ? ' ' + x.time : ''} · ${esc(x.note)} — <b>${money2(x.amt, o.cur)}</b> ${cats(x.env).ic}${x.dup === 'imp' ? ' <i>(уже записано)</i>' : x.dup === 'soft' ? ' <i>(похоже, уже есть)</i>' : ''}`).join('\n');
+  if (o.income) t += `\n\n➕ Поступления ${fmt(o.income, o.cur)} не записываю.`;
+  t += '\n\nНажми на номер, чтобы убрать или вернуть трату.';
+  const nums = o.items.map((x, i) => ({ text: `${x.on ? '✅' : '▫️'} ${i + 1}`, callback_data: `sh:t:${o.id}:${i}` }));
+  const rows = []; for (let i = 0; i < nums.length; i += 6) rows.push(nums.slice(i, i + 6));
+  rows.push([{ text: on.length ? `💾 Записать ${on.length} · ${money2(Math.round(total * 100) / 100, o.cur)}` : 'Ничего не выбрано', callback_data: `sh:ok:${o.id}` }], [{ text: '✖️ Не надо', callback_data: `sh:no:${o.id}` }]);
+  return { text: t, reply_markup: { inline_keyboard: rows } };
+}
 export function streakOf(state) {
   const days = new Set((state.tx || []).map(txDate));
   ((state.srv || {}).ns || []).forEach((d) => days.add(d));
@@ -837,6 +923,7 @@ async function userStore(env, uid, name) {
   return {
     owner: link || uid, own, b,
     getState: () => b.getState(), putState: (a, c) => b.putState(a, c), addTx: (t) => b.addTx({ ...t, by: t.by || uid, byName: t.byName || name || '' }),
+    addTxs: (l) => b.addTxs(l.map((t) => ({ ...t, by: t.by || uid, byName: t.byName || name || '' }))),
     undo: () => b.undo(uid), srvGet: () => b.srvGet(), srvPatch: (x) => b.srvPatch(x), aiTick: (d, m) => b.aiTick(d, m),
     remAdd: (x) => own.remAdd(x), remList: () => own.remList(), remDel: (i) => own.remDel(i), remDue: (n) => own.remDue(n), remSent: (i, d) => own.remSent(i, d),
     setPending: (x) => own.setPending(x), takePending: () => own.takePending(), seenUpd: (i) => own.seenUpd(i),
@@ -949,6 +1036,31 @@ async function onUpdate(update, env, origin) {
       await new Promise((res) => setTimeout(res, 60));
     }
     await edit(`✅ Рассылка отправлена: ${ok} доставлено${fail ? `, ${fail} не дошло (бот заблокирован или чат удалён)` : ''}.`);
+    return;
+  }
+  if (update.callback_query && /^sh:/.test(update.callback_query.data || '')) {
+    const q = update.callback_query, uid = q.from.id, [, act, id, i] = q.data.split(':');
+    const own = store(env, uid), st = await userStore(env, uid, q.from.first_name);
+    const edit = (body) => tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, parse_mode: 'HTML', ...body });
+    if (act === 't') {
+      const o = await own.shotToggle(id, +i);
+      if (!o) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Список устарел, пришли скрин ещё раз' }); return; }
+      await tg(env, 'answerCallbackQuery', { callback_query_id: q.id });
+      await edit(shotView(o, (await st.getState()) || {}));
+      return;
+    }
+    const o = await own.shotDel(id);
+    if (!o) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Уже обработано' }); return; }
+    if (act === 'no') { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Ок' }); await edit({ text: '✖️ Ничего не записал.' }); return; }
+    const state = (await st.getState()) || {}, rates = await getRates();
+    const list = o.items.filter((x) => x.on).map((x, k) => { const t = makeTx({ sum: x.amt, cur: o.cur, note: x.note, date: x.date }, x.env, state, rates); return t && { ...t, id: Date.now() + k, imp: x.imp }; }).filter(Boolean);
+    if (!list.length) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Нечего записывать' }); await edit({ text: '✖️ Ничего не записал.' }); return; }
+    const { state: s2, added } = await st.addTxs(list);
+    await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: `Записал ${added.length} ✓` });
+    const main = s2.cur || 'RUB', by = {};
+    added.forEach((t) => { by[t.env] = (by[t.env] || 0) + t.sum; });
+    const lines = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([e, v]) => { const c = catInfo(e, s2); return `${c.ic} ${c.name} — ${fmt(v, main)}`; });
+    await edit({ text: `✅ Записал ${added.length} ${added.length === 1 ? 'трату' : added.length < 5 ? 'траты' : 'трат'} на <b>${fmt(added.reduce((a, t) => a + t.sum, 0), main)}</b>${added.length < list.length ? ` (${list.length - added.length} уже были)` : ''}\n\n${lines.join('\n')}`, reply_markup: appButton(origin) });
     return;
   }
   if (update.callback_query && update.callback_query.data === 'ns') {
@@ -1070,13 +1182,26 @@ async function onUpdate(update, env, origin) {
     const acc = await accessOf(env, st.owner);
     if (!acc.active) { await sendPaywall(env, chat, st.owner, acc); return; }
   }
-  if (msg.photo && !/\d/.test(text)) {
+  const imgDoc = msg.document && /^image\//.test(msg.document.mime_type || '') ? msg.document : null;
+  if ((msg.photo || imgDoc) && !/\d/.test(text)) {
     const state = (await st.getState()) || {};
     if (!env.AI) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Фото чеков пока не понимаю. Напиши сумму текстом: «продукты 1500».' }); return; }
     if (!(await st.aiTick(todayStr(state), AI_MAX))) { await tg(env, 'sendMessage', { chat_id: chat, text: '😴 На сегодня лимит запросов к ИИ закончился. Напиши сумму текстом: «продукты 1500».' }); return; }
-    await tg(env, 'sendMessage', { chat_id: chat, text: '🧾 Читаю чек…' });
-    let j = null;
-    try { const ph = msg.photo[msg.photo.length - 1]; const b = await fileBytes(env, ph.file_id); if (b) j = await readReceipt(env, b); } catch (e) { console.error('receipt', e); }
+    await tg(env, 'sendMessage', { chat_id: chat, text: '🔎 Смотрю, что на фото…' });
+    let j = null, bytes = null;
+    try { bytes = await fileBytes(env, imgDoc ? imgDoc.file_id : msg.photo[msg.photo.length - 1].file_id); } catch (e) { console.error('file', e); }
+    if (!bytes) { await tg(env, 'sendMessage', { chat_id: chat, text: '😕 Не смог скачать фото, пришли ещё раз.' }); return; }
+    const shot = await readShot(env, bytes);
+    if (shot && shot.type === 'list') {
+      const o = { id: Date.now(), ...shotItems(shot, state) };
+      if (!o.items.length) { await tg(env, 'sendMessage', { chat_id: chat, text: o.income ? `На скрине только поступления (${fmt(o.income, o.cur)}), трат нет 🙂` : '😕 Не разобрал операции на скрине. Пришли скрин крупнее, без обрезанных строк.' }); return; }
+      await store(env, uid).shotPut(o.id, o);
+      await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', ...shotView(o, state) });
+      try { const f0 = (await st.srvGet()).flags || {}; if (!f0.shot) await st.srvPatch({ flags: { ...f0, shot: 1 } }); } catch (e) { /* не критично */ }
+      return;
+    }
+    if (shot && shot.type === 'other') { await tg(env, 'sendMessage', { chat_id: chat, text: '🤔 Не похоже ни на чек, ни на список операций. Пришли фото чека или скрин истории операций из банка (Alipay, WeChat, Сбер, Т-Банк).' }); return; }
+    try { j = await readReceipt(env, bytes); } catch (e) { console.error('receipt', e); }
     const total = j && +String(j.total).replace(',', '.').replace(/[^\d.]/g, '');
     if (!total || total <= 0) { await tg(env, 'sendMessage', { chat_id: chat, text: '😕 Не смог прочитать сумму. Сфоткай чек ровнее, при хорошем свете, или напиши: «продукты 1500».' }); return; }
     const cur = CURS[String(j.cur || '').toUpperCase()] ? String(j.cur).toUpperCase() : state.cur || 'RUB';
@@ -1157,6 +1282,7 @@ async function onUpdate(update, env, origin) {
         '<b>Голосом</b> — запиши голосовое 🎤\n' +
         '<b>Напомнить</b> — <code>напомни в 16:30 оплатить интернет 500</code>\n' +
         '<b>Чек</b> — просто сфоткай и пришли 🧾\n' +
+        '<b>Выписка</b> — скрин истории операций из Alipay, WeChat, Сбера или Т-Банка 📸 — запишу всё сразу\n' +
         '<b>Меню</b> — <code>меню на неделю, китайская кухня</code>, <code>не люблю грибы</code>, <code>замени ужин в среду</code> 👨‍🍳\n' +
         '<b>Вопрос</b> — <code>на что я больше всего трачу?</code> 🤖\n\n' +
         'А ещё понимаю слова: <b>сегодня</b>, <b>итоги</b>, <b>неделя</b>, <b>категории</b>, <b>напоминания</b>, <b>платежи</b>, <b>отменить</b>. Или жми кнопки внизу 👇' });
