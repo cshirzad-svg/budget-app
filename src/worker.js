@@ -1179,6 +1179,15 @@ async function onUpdate(update, env, origin) {
       await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Эта трата уже записана или устарела' });
       return;
     }
+    if (p.multi) {
+      const rates = await getRates(); let s = state0; const txs = [];
+      for (const x of p.multi) { const tx = makeTx(x, envId, s, rates); if (tx) { s = await st.addTx(tx); txs.push(tx); } }
+      const c = catInfo(envId, s), main = s.cur || 'RUB';
+      await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Записал ✓' });
+      await tg(env, 'editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, reply_markup: appButton(origin),
+        text: `✅ В «${c.name}» ${c.ic}:\n` + txs.map((t) => `• −${t.cur && t.cur !== main ? fmt(t.orig, t.cur) : fmt(t.sum, main)}${t.note ? ` (${t.note})` : ''}`).join('\n') });
+      return;
+    }
     const tx = makeTx(p, envId, state0, await getRates());
     if (!tx) {
       await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Не смог получить курс валюты, попробуй ещё раз' });
@@ -1440,6 +1449,11 @@ async function onUpdate(update, env, origin) {
   }
 
   const state = (await st.getState()) || {};
+  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length > 1) {
+    const items = lines.map((l) => ({ l, p: parseExpense(l, state) }));
+    if (items.filter((x) => x.p).length >= 2) { await addMany(env, st, reg, uid, chat, state, items, origin); return; }
+  }
   const parsed = parseExpense(text, state);
   if (!parsed && env.AI && isQuestion(text)) {
     if (!(await st.aiTick(todayStr(state), AI_MAX))) { await tg(env, 'sendMessage', { chat_id: chat, text: '😴 На сегодня лимит вопросов к ИИ закончился. Завтра продолжим!' }); return; }
@@ -1472,6 +1486,40 @@ async function onUpdate(update, env, origin) {
   await reg.regUpdate(uid, { n: (s.tx || []).length });
   await tg(env, 'sendMessage', { chat_id: chat, text: summary(s, envId, tx), reply_markup: appButton(origin) });
 }
+
+/* несколько трат в одном сообщении, по строке на трату */
+async function addMany(env, st, reg, uid, chat, state, items, origin) {
+  const rates = await getRates(), main = state.cur || 'RUB';
+  const done = [], ask = [], bad = [];
+  let s = state;
+  for (const { l, p } of items) {
+    if (!p) { bad.push(l); continue; }
+    const envId = detectEnv(p.note, s);
+    if (!envId) { ask.push(p); continue; }
+    const tx = makeTx(p, envId, s, rates);
+    if (!tx) { bad.push(l); continue; }
+    s = await st.addTx(tx);
+    done.push({ tx, envId });
+  }
+  if (done.length) await reg.regUpdate(uid, { n: (s.tx || []).length });
+  const amt = (tx) => (tx.cur && tx.cur !== main ? fmt(tx.orig, tx.cur) : fmt(tx.sum, main));
+  let out = '';
+  if (done.length) {
+    const tot = done.reduce((a, d) => a + (catInfo(d.envId, s).save ? 0 : d.tx.sum), 0);
+    out = `✅ Записал ${done.length} ${plural(done.length, 'трату', 'траты', 'трат')}:\n` +
+      done.map((d) => { const c = catInfo(d.envId, s); return `${c.ic} ${c.save ? '' : '−'}${amt(d.tx)} → «${c.name}»${d.tx.note ? ` (${d.tx.note})` : ''}`; }).join('\n') +
+      (done.length > 1 && tot ? `\n\nИтого: −${fmt(tot, main)}` : '');
+  }
+  if (bad.length) out += (out ? '\n\n' : '') + '🤔 Не понял: ' + bad.map((b) => `«${b}»`).join(', ');
+  if (out) await tg(env, 'sendMessage', { chat_id: chat, text: out, reply_markup: appButton(origin) });
+  if (ask.length) {
+    await st.setPending({ multi: ask });
+    const kb = getCats(s).map((c) => ({ text: `${c.ic} ${c.name}`, callback_data: `e:${c.id}` }));
+    const rows = []; for (let i = 0; i < kb.length; i += 2) rows.push(kb.slice(i, i + 2));
+    await tg(env, 'sendMessage', { chat_id: chat, text: `Куда записать ${ask.length > 1 ? 'эти траты' : 'эту трату'}?\n` + ask.map((p) => `• ${fmt(p.sum, p.cur || main)}${p.note ? ` — ${p.note}` : ''}`).join('\n'), reply_markup: { inline_keyboard: rows } });
+  }
+}
+const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
 
 /* ---------- маршруты ---------- */
 export default {
