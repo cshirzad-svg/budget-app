@@ -1350,10 +1350,11 @@ async function onUpdate(update, env, origin) {
       reply_markup: sent ? undefined : { inline_keyboard: [[{ text: `✅ Отправить всем (${list.length})`, callback_data: 'bc:' + BC_VER }], [{ text: '✖️ Отмена', callback_data: 'bc:no' }]] } });
     return;
   }
-  if (/^\/promo\s+[\w-]+$/.test(text)) {
+  if (/^\/promo\s+\S+$/.test(text)) {
     if ((await reg.getAdmin()) !== uid) return;
     const name = text.split(/\s+/)[1];
-    const r = await tg(env, 'sendVideo', { chat_id: chat, video: new URL('promo/' + name + '.mp4', env.ORIGIN || origin + '/').href, supports_streaming: true, caption: '🎬 ' + name });
+    const src = /^https:\/\//.test(name) ? name : new URL('promo/' + name + '.mp4', env.ORIGIN || origin + '/').href;
+    const r = await tg(env, 'sendVideo', { chat_id: chat, video: src, supports_streaming: true, caption: '🎬 Промо-ролик' });
     if (!r.ok) await tg(env, 'sendMessage', { chat_id: chat, text: '😕 Не смог отправить ролик: ' + (r.description || 'ошибка') });
     return;
   }
