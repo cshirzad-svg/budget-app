@@ -959,9 +959,14 @@ async function payLink(env, owner) {
   return 'https://auth.robokassa.ru/Merchant/Index.aspx?' + q.toString();
 }
 async function payButtons(env, owner) {
-  return { inline_keyboard: [[{ text: `💳 Оплатить картой или СБП — ${priceRub(env)} ₽`, url: await payLink(env, owner) }]] };
+  return { inline_keyboard: [[{ text: `💳 Оплатить картой или СБП — ${priceRub(env)} ₽`, url: await payLink(env, owner) }], [{ text: '📄 Условия и возврат', url: 'https://konverty.app/offer' }]] };
 }
-const PAY_SOON = '💳 Оплата картой появится совсем скоро — я напишу, как только можно будет открыть полный доступ.';
+// Реквизиты для оферты/сайта: задаются переменными LEGAL_* в Cloudflare
+const legal = (env) => ({
+  FIO: env.LEGAL_FIO || '[ФИО самозанятого]', INN: env.LEGAL_INN || '[ИНН]', EMAIL: env.LEGAL_EMAIL || '[email]',
+  CITY: env.LEGAL_CITY || 'Россия', PRICE: String(priceRub(env)), TRIAL: String(TRIAL_DAYS), DATE: env.LEGAL_DATE || '19.10.2026',
+});
+const PAY_SOON ='💳 Оплата картой появится совсем скоро — я напишу, как только можно будет открыть полный доступ.';
 const priceStars = (env) => Math.max(1, parseInt(env.PRICE_STARS || '600', 10) || 600);
 const invoiceBody = (env, owner) => ({ title: 'Бюджет в конвертах — навсегда', description: 'Полный доступ к боту и приложению без ограничений: траты, конверты, ИИ-повар, напоминания, общий бюджет на двоих.', payload: 'full:' + owner, currency: 'XTR', prices: [{ label: 'Полный доступ', amount: priceStars(env) }], provider_token: '' });
 async function sendPaywall(env, chat, owner, acc) {
@@ -1201,7 +1206,7 @@ async function onUpdate(update, env, origin) {
     return;
   }
   if (/^\/?(paysupport|terms|поддержка)/i.test(text)) {
-    if (/^\/?terms/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: `📄 Условия: 3 дня бесплатно, дальше полный доступ навсегда за ${priceRub(env)} ₽ (разовый платёж картой или через СБП). Если что-то не работает — напиши «поддержка» и опиши проблему, ответим и при необходимости вернём оплату.` }); return; }
+    if (/^\/?terms/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: `📄 Условия: 3 дня бесплатно, дальше полный доступ навсегда за ${priceRub(env)} ₽ (разовый платёж картой или через СБП). Передумал в течение 14 дней — напиши «поддержка», вернём деньги полностью.\n\nОферта: https://konverty.app/offer\nКонфиденциальность: https://konverty.app/privacy`, disable_web_page_preview: true }); return; }
     const adm = await store(env, '__registry__').getAdmin(), body = text.replace(/^\/?(paysupport|поддержка)\s*/i, '');
     if (!body) { await tg(env, 'sendMessage', { chat_id: chat, text: '🛟 Опиши проблему одним сообщением, начиная со слова «поддержка». Например: «поддержка не проходит оплата».' }); return; }
     if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `🛟 Поддержка от ${msg.from.first_name || ''}${msg.from.username ? ' @' + msg.from.username : ''} (id ${uid}):\n\n${body.slice(0, 1500)}` });
@@ -1306,6 +1311,12 @@ async function onUpdate(update, env, origin) {
   else if (kw === 'subs') text = 'подписки';
   else if (kw === 'report') text = 'итоги';
   if (text.startsWith('/start') || text.startsWith('/help')) {
+    const src = (text.match(/^\/start\s+([\w-]{1,32})/) || [])[1];
+    if (src) { const cur = await reg.regGet(uid); if (cur && !cur.src) await reg.regUpdate(uid, { src }); }
+    if (src && /^(check|gift|kontrol|7)/.test(src)) {
+      await tg(env, 'sendDocument', { chat_id: chat, document: 'https://konverty.app/gift/7-dyr-v-byudzhete.pdf',
+        caption: '🎁 Держи чек-лист «7 дыр, через которые утекает зарплата».\n\nНачни со страницы 3: тест на 15 минут покажет, сколько у тебя утекает за месяц. А ниже — бот, который будет считать это за тебя 👇' });
+    }
     if (kw === 'help' || text.startsWith('/help')) {
       await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', reply_markup: KB, text:
         '💡 <b>Как со мной общаться</b>\n\n' +
@@ -1330,7 +1341,9 @@ async function onUpdate(update, env, origin) {
         '3️⃣ Я сам разложу по категориям и покажу графики в приложении.\n\n' +
         '🎤 Можно голосом: просто запиши голосовое «такси пятьсот».\n' +
         '⏰ <code>напомни в 16:30 оплатить интернет 500</code>\n\n' +
-        'Кнопки внизу 👇 — сводки, напоминания, отмена. Команды учить не нужно.',
+        'Кнопки внизу 👇 — сводки, напоминания, отмена. Команды учить не нужно.\n\n' +
+        '<i>Пользуясь ботом, ты принимаешь <a href="https://konverty.app/offer">условия</a> и <a href="https://konverty.app/consent">согласие на обработку данных</a>.</i>',
+      disable_web_page_preview: true,
     });
     await tg(env, 'sendMessage', { chat_id: chat, text: 'Готов записывать 🙂 Напиши первую трату, например: кофе 300', reply_markup: KB });
     return;
@@ -1371,7 +1384,7 @@ async function onUpdate(update, env, origin) {
     for (const u of list.slice(0, 300)) { try { const s0 = (await store(env, u.uid).getState()) || {}; u.n = (s0.tx || []).length; u.onb = !!s0.onboarded || u.onb; } catch (e) { /* пропускаем */ } }
     const c = (f) => list.filter(f).length;
     await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text:
-      `📊 <b>Статистика</b>\n\n👥 Всего зашли: ${list.length}\n🧭 Прошли настройку: ${c((u) => u.onb)}\n✍️ Записали хотя бы 1 трату: ${c((u) => u.n > 0)}\n🔥 Активны за сутки: ${c((u) => u.seen > day)}\n📅 Активны за неделю: ${c((u) => u.seen > wk)}\n🔔 С напоминаниями: ${c((u) => u.notif && (u.notif.m || u.notif.e))}\n💎 Оплатили: ${c((u) => u.paid && !u.gift)}\n👫 В общих бюджетах: ${c((u) => u.link)}\n\n` +
+      `📊 <b>Статистика</b>\n\n👥 Всего зашли: ${list.length}\n🧭 Прошли настройку: ${c((u) => u.onb)}\n✍️ Записали хотя бы 1 трату: ${c((u) => u.n > 0)}\n🔥 Активны за сутки: ${c((u) => u.seen > day)}\n📅 Активны за неделю: ${c((u) => u.seen > wk)}\n🔔 С напоминаниями: ${c((u) => u.notif && (u.notif.m || u.notif.e))}\n💎 Оплатили: ${c((u) => u.paid && !u.gift)}\n👫 В общих бюджетах: ${c((u) => u.link)}\n${(() => { const m = {}; list.forEach((u) => { if (u.src) m[u.src] = (m[u.src] || 0) + 1; }); const k = Object.keys(m); return k.length ? '🔗 Источники: ' + k.map((x) => `${x} — ${m[x]}`).join(', ') + '\n' : ''; })()}\n` +
       list.sort((a, b) => (b.seen || 0) - (a.seen || 0)).slice(0, 15).map((u) => `• ${u.name || u.uid}${u.user ? ' @' + u.user : ''} — ${u.n || 0} записей${u.paid ? ' 💎' : ''} · id ${u.uid}`).join('\n') });
     return;
   }
@@ -1633,6 +1646,13 @@ export default {
       return json({ ok: false }, 405);
     }
 
+    if (env.ASSETS && request.method === 'GET' && /^\/(index\.html|offer|privacy|consent)?$/.test(url.pathname)) {
+      const r = await env.ASSETS.fetch(request);
+      if (r.status !== 200 || !/text\/html/.test(r.headers.get('content-type') || '')) return r;
+      const L = legal(env);
+      const html = (await r.text()).replace(/\{\{(FIO|INN|EMAIL|CITY|PRICE|TRIAL|DATE)\}\}/g, (_, k) => L[k]);
+      return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
+    }
     return env.ASSETS ? env.ASSETS.fetch(request) : new Response('not found', { status: 404 });
   },
 };

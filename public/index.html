@@ -501,6 +501,85 @@ input[type=number]{-moz-appearance:textfield}
 </style>
 </head>
 <body>
+<style>
+#land{display:none}
+html.web #land{display:block;position:fixed;inset:0;z-index:9999;overflow-y:auto;background:var(--bg);color:var(--ink)}
+html.web body{overflow:hidden}
+.ld{max-width:960px;margin:0 auto;padding:28px 16px 40px}
+.ld-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ld-logo{font-family:var(--display);font-weight:700;font-size:17px;display:flex;align-items:center;gap:8px}
+.ld-hero{display:grid;grid-template-columns:1.2fr .8fr;gap:32px;align-items:center;margin-top:36px}
+.ld h1{font-size:clamp(28px,5vw,46px);line-height:1.08}
+.ld-sub{font-size:18px;color:var(--muted);margin:16px 0 22px}
+.ld-cta{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.ld-btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;font:700 16px var(--body);padding:14px 22px;border-radius:14px;text-decoration:none;border:0;cursor:pointer}
+.ld-btn.gh{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
+.ld-note{font-size:14px;color:var(--muted);margin-top:10px}
+.ld-vid{width:100%;max-width:300px;justify-self:center;aspect-ratio:9/16;border-radius:26px;background:#000;box-shadow:0 20px 50px rgba(0,0,0,.25);object-fit:cover}
+.ld h2{font-family:var(--display);font-weight:700;font-size:24px;margin:56px 0 18px}
+.ld-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.ld-card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px}
+.ld-card b{display:block;font-size:16px;margin:6px 0 4px}
+.ld-card span{color:var(--muted);font-size:14px}
+.ld-ic{font-size:28px}
+.ld-price{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ld-price .ld-card{padding:22px}
+.ld-big{font-family:var(--display);font-weight:700;font-size:34px;margin:4px 0}
+.ld-steps{counter-reset:s;display:grid;gap:10px;padding:0;list-style:none}
+.ld-steps li{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 16px 14px 52px;position:relative}
+.ld-steps li::before{counter-increment:s;content:counter(s);position:absolute;left:16px;top:13px;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:13px;display:grid;place-items:center}
+.ld-foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;display:grid;gap:8px}
+.ld-foot a{color:var(--muted)}
+.ld-links{display:flex;flex-wrap:wrap;gap:14px}
+@media (max-width:720px){.ld-hero{grid-template-columns:1fr}.ld-price{grid-template-columns:1fr}.ld-vid{max-width:260px}}
+</style>
+<script>try{var W=window.Telegram&&Telegram.WebApp;if(!(W&&W.platform&&W.platform!=='unknown')&&!/[?&]app\b/.test(location.search))document.documentElement.classList.add('web')}catch(e){}</script>
+<div id="land">
+ <div class="ld">
+  <div class="ld-top"><div class="ld-logo">💌 Бюджет в конвертах</div><a class="ld-btn gh" href="https://t.me/konverty_budget_bot">Открыть в Telegram</a></div>
+  <div class="ld-hero">
+   <div>
+    <h1>Бюджет, который ведётся сам — прямо в Telegram</h1>
+    <p class="ld-sub">Пишешь траты боту как другу: «кофе 300», «такси 500», можно голосом или скрином из банка. Он раскладывает деньги по конвертам и говорит, сколько можно потратить сегодня.</p>
+    <div class="ld-cta"><a class="ld-btn" href="https://t.me/konverty_budget_bot">🚀 Попробовать бесплатно</a><button class="ld-btn gh" type="button" onclick="document.documentElement.classList.remove('web')">👀 Посмотреть приложение</button></div>
+    <div class="ld-note">3 дня бесплатно, дальше полный доступ навсегда за {{PRICE}} ₽. Без подписки.</div>
+   </div>
+   <video class="ld-vid" poster="/promo/ad-3.jpg" src="/promo/ad-3.mp4" autoplay muted loop playsinline preload="metadata"></video>
+  </div>
+
+  <h2>Что умеет</h2>
+  <div class="ld-grid">
+   <div class="ld-card"><div class="ld-ic">💬</div><b>Траты обычными словами</b><span>«вчера такси 35 ю», «отложил 5к» — бот понимает сам, команды учить не нужно</span></div>
+   <div class="ld-card"><div class="ld-ic">🎤</div><b>Голосом</b><span>Записал голосовое — трата уже в бюджете</span></div>
+   <div class="ld-card"><div class="ld-ic">📸</div><b>Скрин выписки и чеки</b><span>Сбер, Т-Банк, Alipay, WeChat: пришли скриншот — запишет все траты разом</span></div>
+   <div class="ld-card"><div class="ld-ic">✉️</div><b>Конверты</b><span>Доход делится по категориям, видно, сколько осталось в каждой</span></div>
+   <div class="ld-card"><div class="ld-ic">☀️</div><b>Лимит на сегодня</b><span>Каждый день — сколько можно потратить, чтобы дотянуть до зарплаты</span></div>
+   <div class="ld-card"><div class="ld-ic">⏰</div><b>Напоминания об оплатах</b><span>Интернет, кредит, подписки — напомнит в нужный день</span></div>
+   <div class="ld-card"><div class="ld-ic">👨‍🍳</div><b>ИИ-повар</b><span>Меню на неделю под твой бюджет и список продуктов</span></div>
+   <div class="ld-card"><div class="ld-ic">👨‍👩‍👧</div><b>Семейный бюджет</b><span>Общий бюджет на двоих или на всю семью</span></div>
+  </div>
+
+  <h2>Стоимость</h2>
+  <div class="ld-price">
+   <div class="ld-card"><span>Пробный период</span><div class="ld-big">0 ₽</div><span>3 дня, все функции, кроме ИИ-повара. Карта не нужна.</span></div>
+   <div class="ld-card"><span>Полный доступ</span><div class="ld-big">{{PRICE}} ₽</div><span>Один платёж — доступ навсегда. Картой или через СБП. Без подписок и автосписаний.</span></div>
+  </div>
+
+  <h2>Как купить</h2>
+  <ol class="ld-steps">
+   <li>Открой бота <a href="https://t.me/konverty_budget_bot">@konverty_budget_bot</a> и нажми «Старт» — начнётся бесплатный период.</li>
+   <li>Когда решишь остаться, нажми в боте кнопку «Оплатить картой или СБП» — откроется страница оплаты Robokassa.</li>
+   <li>Оплати картой или через СБП. Доступ откроется сразу, бот пришлёт подтверждение, а на почту придёт чек.</li>
+   <li>Передумал в течение 14 дней — напиши «поддержка», вернём деньги полностью.</li>
+  </ol>
+
+  <div class="ld-foot">
+   <div class="ld-links"><a href="/offer">Публичная оферта</a><a href="/privacy">Политика конфиденциальности</a><a href="/consent">Согласие на обработку данных</a></div>
+   <div>Поддержка: напиши боту «поддержка» или на <a href="mailto:{{EMAIL}}">{{EMAIL}}</a></div>
+   <div>{{FIO}} · Самозанятый · ИНН {{INN}} · {{CITY}}</div>
+  </div>
+ </div>
+</div>
 <div class="boot-l" id="bootL"><span>💌</span>Загружаю бюджет…</div>
 
 <div class="wrap">
