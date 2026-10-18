@@ -30,6 +30,7 @@ const HELP =
 /* первые пользователи (семья) — полный доступ бесплатно */
 const FREE_USERS = ['svetlana_znatnyiplov', 'roman77gor', 'dmeetriev'];
 /* личное сообщение при выдаче подарка (отправляется один раз, из крона) */
+const GIFT_ID = { dmeetriev: '8667796711' };
 const GIFT_MSG = {
   dmeetriev: 'Спасибо за разбор, пользуйтесь на здоровье) 🙌\n\n🎁 Вам открыт полный доступ к боту навсегда и бесплатно: все функции, включая ИИ-повара и разбор скринов из банка. Ничего платить не нужно.',
 };
@@ -558,7 +559,7 @@ async function runSchedule(env) {
   try {
     for (const [nick, text] of Object.entries(GIFT_MSG)) {
       if (await reg.meta('gift:' + nick)) continue;
-      const u0 = (await reg.regList()).find((u) => String(u.user || '').toLowerCase() === nick);
+      const u0 = (await reg.regList()).find((u) => String(u.user || '').toLowerCase() === nick || String(u.uid) === GIFT_ID[nick]);
       if (!u0) continue;
       await reg.regUpdate(u0.uid, { paid: true, gift: true, paidAt: u0.paidAt || Date.now() });
       const r = await tg(env, 'sendMessage', { chat_id: u0.uid, text, reply_markup: appButton('https://konverty.app') });
