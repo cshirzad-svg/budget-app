@@ -28,7 +28,11 @@ const HELP =
 
 /* ---------- хранилище: один объект на пользователя ---------- */
 /* первые пользователи (семья) — полный доступ бесплатно */
-const FREE_USERS = ['svetlana_znatnyiplov', 'roman77gor'];
+const FREE_USERS = ['svetlana_znatnyiplov', 'roman77gor', 'dmeetriev'];
+/* личное сообщение при выдаче подарка (отправляется один раз, из крона) */
+const GIFT_MSG = {
+  dmeetriev: 'Спасибо за разбор, пользуйтесь на здоровье) 🙌\n\n🎁 Вам открыт полный доступ к боту навсегда и бесплатно: все функции, включая ИИ-повара и разбор скринов из банка. Ничего платить не нужно.',
+};
 
 /* ---------- рассылка ---------- */
 const BC_VER = 'news-2';
@@ -551,6 +555,18 @@ const hm = (t) => { const [h, m] = String(t || '').split(':').map(Number); retur
 const APPKB = (env) => (env.ORIGIN ? [[{ text: '📊 Открыть бюджет', web_app: { url: env.ORIGIN } }]] : []);
 async function runSchedule(env) {
   const reg = store(env, '__registry__');
+  try {
+    for (const [nick, text] of Object.entries(GIFT_MSG)) {
+      if (await reg.meta('gift:' + nick)) continue;
+      const u0 = (await reg.regList()).find((u) => String(u.user || '').toLowerCase() === nick);
+      if (!u0) continue;
+      await reg.regUpdate(u0.uid, { paid: true, gift: true, paidAt: u0.paidAt || Date.now() });
+      const r = await tg(env, 'sendMessage', { chat_id: u0.uid, text, reply_markup: appButton('https://konverty.app') });
+      await reg.meta('gift:' + nick, Date.now());
+      const adm = await reg.getAdmin();
+      if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: r.ok ? `🎁 @${nick}: выдан бесплатный доступ, сообщение отправлено.` : `🎁 @${nick}: доступ выдан, но сообщение не дошло (${r.description || r.error_code}).` });
+    }
+  } catch (e) { console.error('gift', e); }
   try {
     if ((await reg.meta('whv')) !== 3 && env.ORIGIN) {
       const o = env.ORIGIN.replace(/\/$/, '');
