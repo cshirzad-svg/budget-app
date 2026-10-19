@@ -729,18 +729,34 @@ export function catsText(state) {
 const LLM = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const VISION = '@cf/meta/llama-3.2-11b-vision-instruct';
 const AI_MAX = 15;
-async function aiText(env, messages, max = 1400) {
-  const r = await env.AI.run(LLM, { messages, max_tokens: max, temperature: 0.6 });
+async function aiText(env, messages, max = 1400, model = LLM) {
+  const r = await env.AI.run(model, { messages, max_tokens: max, temperature: 0.6 });
   const v = r && r.response;
   return typeof v === 'string' ? v : v ? JSON.stringify(v) : '';
 }
 export function pickJSON(t) {
   if (!t) return null;
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
-  if (a < 0 || b <= a) return null;
+  if (a < 0) return null;
+  if (b <= a) return fixCut(t.slice(a));
   const raw = t.slice(a, b + 1);
   try { return JSON.parse(raw); } catch (e) { /* ниже чиним */ }
-  try { return JSON.parse(raw.replace(/,\s*([}\]])/g, '$1').replace(/[“”]/g, '"')); } catch (e) { return null; }
+  try { return JSON.parse(raw.replace(/,\s*([}\]])/g, '$1').replace(/[“”]/g, '"')); } catch (e) { /* возможно, ответ оборван */ }
+  return fixCut(t.slice(a));
+}
+/* ответ ИИ оборвался на середине: отрезаем недописанный хвост и закрываем скобки */
+export function fixCut(t) {
+  const st = []; let inS = false, esc = false, lastOk = -1, okStack = null;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (inS) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inS = false; continue; }
+    if (ch === '"') inS = true;
+    else if (ch === '{' || ch === '[') st.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']') { st.pop(); lastOk = i; okStack = st.slice(); if (!st.length) break; }
+  }
+  if (lastOk < 0) return null;
+  const body = t.slice(0, lastOk + 1).replace(/,\s*$/, '');
+  try { return JSON.parse(body + okStack.reverse().join('')); } catch (e) { return null; }
 }
 const DAYS7 = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MEALS = ['завтрак', 'обед', 'ужин'];
@@ -756,7 +772,7 @@ export function cleanMenu(j, people) {
     }).filter((x) => x[2]);
     if (items.length) shop.push([name, items]);
   }
-  if (!shop.length) return null;
+  if (!shop.length || days.filter((d) => d[1] !== '—').length < 5) return null;
   return { title: String(j.title || 'Твоё меню').slice(0, 60), days, shop, p: people, at: Date.now() };
 }
 const basketRub = (m) => m.shop.reduce((a, [, items]) => a + items.reduce((b, [q, , , pr]) => b + q * pr, 0), 0);
@@ -770,11 +786,18 @@ export async function makeMenu(env, state, request) {
   const sys = 'Ты повар-экономист. Составляешь простое домашнее меню на 7 дней (завтрак, обед, ужин) и список покупок на всю неделю. ' +
     'Используй остатки: суп или основное блюдо можно есть 2 дня подряд, пиши «(вчерашний)». Блюда реальные, понятные, по-русски. ' +
     'Количества — на всю неделю для указанного числа людей. Единицы: кг, л, шт., уп. Цена — примерная средняя цена в рублях за 1 единицу в обычном российском супермаркете в 2026 году. ' +
-    'Отвечай ТОЛЬКО JSON без пояснений, строго в формате: ' +
+    'Названия блюд короткие (до 4 слов), в каждой группе покупок не больше 8 позиций. Отвечай ТОЛЬКО JSON без пояснений и без ```, строго в формате: ' +
     '{"title":"короткое название недели","days":[["Пн","завтрак","обед","ужин"], ... 7 строк],"shop":[["🥩 Мясо и рыба",[["Куриное филе",1.5,"кг",420]]],["🌾 Крупы",[...]],["🥕 Овощи и фрукты",[...]],["🥛 Молочное и яйца",[...]],["🍞 Прочее",[...]]]}';
   const user = `Людей: ${people}. ${weekBudget ? `Бюджет на продукты на неделю: около ${Math.round(weekBudget)} рублей, постарайся уложиться. ` : ''}${prefs ? `Не использовать / учесть: ${prefs}. ` : ''}Пожелания: ${request || 'обычное сытное и недорогое меню'}.`;
-  const out = await aiText(env, [{ role: 'system', content: sys }, { role: 'user', content: user }], 1600);
-  const m = cleanMenu(pickJSON(out), people);
+  const msgs = [{ role: 'system', content: sys }, { role: 'user', content: user }];
+  let m = null;
+  for (const model of [LLM, '@cf/meta/llama-4-scout-17b-16e-instruct']) {
+    let out = '';
+    try { out = await aiText(env, msgs, 2600, model); } catch (e) { console.error('menu ai', model, e); continue; }
+    m = cleanMenu(pickJSON(out), people);
+    if (m) break;
+    console.error('menu bad json', model, out.length, out.slice(0, 200), '…', out.slice(-200));
+  }
   if (m) m.q = request || '';
   return m;
 }
