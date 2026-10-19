@@ -19,12 +19,12 @@ const ENVS = [
 
 const HELP =
   'Пиши траты прямо сюда, как другу:\n\n' +
-  '• <code>500 продукты</code>\n' +
-  '• <code>такси 300</code>\n' +
-  '• <code>1,5к кафе с друзьями</code>\n' +
-  '• <code>еда 50 ю</code>, <code>кофе 4$</code> — в любой валюте\n' +
-  '• <code>отложил 5к юаней</code> — в копилку\n\n' +
-  'Я сам пойму категорию и валюту. <code>итоги</code> — сколько потрачено за месяц. Ошибся — /undo.';
+  '• «500 продукты»\n' +
+  '• «такси 300»\n' +
+  '• «1,5к кафе с друзьями»\n' +
+  '• «еда 50 ю», «кофе 4$» — в любой валюте\n' +
+  '• «отложил 5к юаней» — в копилку\n\n' +
+  'Я сам пойму категорию и валюту. «итоги» — сколько потрачено за месяц. Ошибся — /undo.';
 
 /* ---------- хранилище: один объект на пользователя ---------- */
 /* первые пользователи (семья) — полный доступ бесплатно */
@@ -419,7 +419,7 @@ export function morningText(state) {
   }
   const y = ymd(new Date(todayUTC(state) - 864e5));
   const ySpent = sumOf((state.tx || []).filter((t) => txDate(t) === y && !isSave(t)));
-  if (!(state.tx || []).length) return '☀️ Доброе утро! Не забывай записывать траты: просто напиши мне, например, <code>кофе 300</code>.';
+  if (!(state.tx || []).length) return '☀️ Доброе утро! Не забывай записывать траты: просто напиши мне, например, «кофе 300».';
   return `☀️ Доброе утро! Вчера ушло ${fmt(ySpent, main)}.\nЗа месяц: ${fmt(spent, main)}.`;
 }
 const CH_SRV = { nodeliv: ['🛵 Неделя без доставки', /доставк|самокат|яндекс ?еда|delivery|деливери|заказ еды|wolt/i], coffee: ['☕ Кофе дома', /кофе|coffee|латте|капучино|раф|американо|starbucks|кофейн/i], food: ['🛒 Еда в рамках'], zero: ['🧘 3 дня без трат'], save10: ['🐷 Отложи 10%'] };
@@ -1427,14 +1427,14 @@ async function onUpdate(update, env, origin) {
     if (kw === 'help' || text.startsWith('/help')) {
       await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', reply_markup: KB, text:
         '💡 <b>Как со мной общаться</b>\n\n' +
-        '<b>Записать трату</b> — просто напиши: <code>кофе 300</code>, <code>вчера такси 500</code>, <code>еда 50 ю</code>, <code>10$ подписка</code>\n' +
-        '<b>Отложить</b> — <code>отложил 5к</code>\n' +
+        '<b>Записать трату</b> — просто напиши: «кофе 300», «вчера такси 500», «еда 50 ю», «10$ подписка»\n' +
+        '<b>Отложить</b> — «отложил 5к»\n' +
         '<b>Голосом</b> — запиши голосовое 🎤\n' +
-        '<b>Напомнить</b> — <code>напомни в 16:30 оплатить интернет 500</code>\n' +
+        '<b>Напомнить</b> — «напомни в 16:30 оплатить интернет 500»\n' +
         '<b>Чек</b> — просто сфоткай и пришли 🧾\n' +
         '<b>Выписка</b> — скрин истории операций из Alipay, WeChat, Сбера или Т-Банка 📸 — запишу всё сразу\n' +
-        '<b>Меню</b> — <code>меню на неделю, китайская кухня</code>, <code>не люблю грибы</code>, <code>замени ужин в среду</code> 👨‍🍳\n' +
-        '<b>Вопрос</b> — <code>на что я больше всего трачу?</code> 🤖\n\n' +
+        '<b>Меню</b> — «меню на неделю, китайская кухня», «не люблю грибы», «замени ужин в среду» 👨‍🍳\n' +
+        '<b>Вопрос</b> — «на что я больше всего трачу?» 🤖\n\n' +
         'А ещё понимаю слова: <b>сегодня</b>, <b>итоги</b>, <b>неделя</b>, <b>категории</b>, <b>напоминания</b>, <b>платежи</b>, <b>отменить</b>. Или жми кнопки внизу 👇' });
       return;
     }
@@ -1444,10 +1444,10 @@ async function onUpdate(update, env, origin) {
         '<b>Как это работает:</b>\n' +
         '1️⃣ Нажми «📊 Открыть бюджет» и за минуту настрой: режим, валюту, доход.\n' +
         '2️⃣ Пиши траты сюда, как другу:\n' +
-        '   • <code>кофе 300</code>\n   • <code>вчера такси 35 ю</code>\n   • <code>отложил 5к</code>\n' +
+        '   • «кофе 300»\n   • «вчера такси 35 ю»\n   • «отложил 5к»\n' +
         '3️⃣ Я сам разложу по категориям и покажу графики в приложении.\n\n' +
         '🎤 Можно голосом: просто запиши голосовое «такси пятьсот».\n' +
-        '⏰ <code>напомни в 16:30 оплатить интернет 500</code>\n\n' +
+        '⏰ «напомни в 16:30 оплатить интернет 500»\n\n' +
         'Кнопки внизу 👇 — сводки, напоминания, отмена. Команды учить не нужно.\n\n' +
         '<i>Пользуясь ботом, ты принимаешь <a href="https://konverty.app/offer">условия</a> и <a href="https://konverty.app/consent">согласие на обработку данных</a>.</i>',
       disable_web_page_preview: true,
@@ -1505,7 +1505,7 @@ async function onUpdate(update, env, origin) {
   }
   if (/^\/?(напоминания|reminders)$/i.test(text)) {
     const list = await st.remList(), state = (await st.getState()) || {};
-    if (!list.length) { await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: 'Напоминаний нет. Напиши, например:\n<code>напомни завтра в 10 оплатить интернет 500</code>' }); return; }
+    if (!list.length) { await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: 'Напоминаний нет. Напиши, например:\n«напомни завтра в 10 оплатить интернет 500»' }); return; }
     const tz = Number.isFinite(state.tz) ? state.tz : 180;
     await tg(env, 'sendMessage', { chat_id: chat, text: '⏰ Напоминания:\n\n' + list.map((x, i) => `${i + 1}. ${whenHuman(x.at + tz * 60000, state)} — ${x.text}`).join('\n'),
       reply_markup: { inline_keyboard: list.slice(0, 10).map((x, i) => [{ text: `🗑 Отменить ${i + 1}`, callback_data: 'rd:' + x.id }]) } });
@@ -1514,7 +1514,7 @@ async function onUpdate(update, env, origin) {
   if (/^\/?(напомни|напомнить|напоминание)(\s|$)/i.test(text)) {
     const state = (await st.getState()) || {};
     const r0 = parseReminder(text, state);
-    if (!r0) { await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '⏰ Не понял, когда напомнить. Примеры:\n<code>напомни в 16:30 оплатить интернет</code>\n<code>напомни завтра в 10 позвонить в банк</code>\n<code>напомни через 2 часа забрать посылку</code>\n<code>напомни 25 числа аренда 30000</code>' }); return; }
+    if (!r0) { await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '⏰ Не понял, когда напомнить. Примеры:\n«напомни в 16:30 оплатить интернет»\n«напомни завтра в 10 позвонить в банк»\n«напомни через 2 часа забрать посылку»\n«напомни 25 числа аренда 30000»' }); return; }
     if (!r0.text) { await tg(env, 'sendMessage', { chat_id: chat, text: 'О чём напомнить? Например: напомни в 16:30 оплатить интернет' }); return; }
     const pe = parseExpense(r0.text, state);
     const rem = { id: Date.now(), at: r0.at, text: r0.text, sum: pe ? pe.sum : null, cur: pe ? pe.cur || state.cur || 'RUB' : null };
