@@ -35,6 +35,11 @@ const GIFT_MSG = {
   dmeetriev: 'Спасибо за разбор, пользуйтесь на здоровье) 🙌\n\n🎁 Вам открыт полный доступ к боту навсегда и бесплатно: все функции, включая ИИ-повара и разбор скринов из банка. Ничего платить не нужно.',
 };
 
+/* разовые личные сообщения (отправляются один раз, из крона) */
+const DM_ONCE = [
+  { key: 'dm:zig-subs', uid: 533704623, text: 'Марсель, спасибо за отзыв, очень дельно! 🙌\n\nУже сделал, как вы предложили:\n\n🔒 Регулярные платежи теперь сразу резервируются в своём конверте. Пока платёж не оплачен, эти деньги не считаются свободными.\n📉 Лимит конверта нельзя сделать меньше суммы его платежей.\n✏️ Сумму и день платежа можно изменить: нажмите на платёж в «Конверты» → «Регулярные платежи». А в напоминании от бота появилась кнопка «Сумма другая»: пишете, сколько заплатили, и сумма обновится на следующие месяцы.\n\nЕсли что-то ещё мешает, пишите, читаю всё 🙂' },
+];
+
 /* ---------- рассылка ---------- */
 const BC_VER = 'news-2b';
 const BC_TEXT = (gift) => 'Привет! 👋 Небольшая новость от бота «Бюджет в конвертах».\n\n' +
@@ -151,6 +156,14 @@ export class UserStore extends DurableObject {
   }
   async remSent(id, del) { const v = await this.ctx.storage.get('rs:' + id); if (del) await this.ctx.storage.delete('rs:' + id); return v || null; }
   async setPending(p) { await this.ctx.storage.put('pending', p); }
+  async subSet(id, patch) {
+    const s = (await this.ctx.storage.get('state')) || {};
+    const x = (s.subs || []).find((y) => String(y.id) === String(id));
+    if (!x) return null;
+    Object.assign(x, patch);
+    await this.ctx.storage.put('state', s);
+    return s;
+  }
   /* скрины выписок, ожидающие подтверждения */
   async shotPut(id, o) { await this.ctx.storage.put('shot:' + id, o); const m = await this.ctx.storage.list({ prefix: 'shot:' }); const ks = [...m.keys()].sort(); while (ks.length > 8) await this.ctx.storage.delete(ks.shift()); }
   async shotGet(id) { return (await this.ctx.storage.get('shot:' + id)) || null; }
@@ -564,6 +577,15 @@ async function runSchedule(env) {
     }
   } catch (e) { console.error('gift', e); }
   try {
+    for (const d of DM_ONCE) {
+      if (await reg.meta(d.key)) continue;
+      const r = await tg(env, 'sendMessage', { chat_id: d.uid, text: d.text, reply_markup: appButton('https://konverty.app') });
+      await reg.meta(d.key, Date.now());
+      const adm = await reg.getAdmin();
+      if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: r.ok ? `✉️ Сообщение ${d.key} отправлено.` : `✉️ ${d.key} не дошло (${r.description || r.error_code}).` });
+    }
+  } catch (e) { console.error('dm', e); }
+  try {
     if ((await reg.meta('whv')) !== 3 && env.ORIGIN) {
       const o = env.ORIGIN.replace(/\/$/, '');
       const w = await tg(env, 'setWebhook', { url: o + '/tg', secret_token: await webhookSecret(env.BOT_TOKEN), allowed_updates: ['message', 'callback_query', 'pre_checkout_query'] });
@@ -595,7 +617,7 @@ async function runSchedule(env) {
       const sent = u.subSent || {};
       const dueSubs = u.subs.filter((x) => x && x.on !== false && Math.min(+x.day || 1, dim) === local.getUTCDate() && sent[x.id] !== ym);
       for (const x of dueSubs) {
-        await tg(env, 'sendMessage', { chat_id: u.uid, text: `🔁 Сегодня платёж: ${x.ic || '💳'} ${x.name} — ${fmt(x.sum, x.cur || 'RUB')}`, reply_markup: { inline_keyboard: [[{ text: '✅ Оплатил — записать', callback_data: 's:pay:' + x.id }], [{ text: '⏭ Не в этот раз', callback_data: 's:skip:' + x.id }]] } });
+        await tg(env, 'sendMessage', { chat_id: u.uid, text: `🔁 Сегодня платёж: ${x.ic || '💳'} ${x.name} — ${fmt(x.sum, x.cur || 'RUB')}`, reply_markup: { inline_keyboard: [[{ text: '✅ Оплатил — записать', callback_data: 's:pay:' + x.id }], [{ text: '✏️ Сумма другая', callback_data: 's:ed:' + x.id }, { text: '⏭ Не в этот раз', callback_data: 's:skip:' + x.id }]] } });
         sent[x.id] = ym;
       }
       if (dueSubs.length) await reg.regUpdate(u.uid, { subSent: sent });
@@ -1031,7 +1053,7 @@ async function userStore(env, uid, name) {
     owner: link || uid, own, b,
     getState: () => b.getState(), putState: (a, c) => b.putState(a, c), addTx: (t) => b.addTx({ ...t, by: t.by || uid, byName: t.byName || name || '' }),
     addTxs: (l) => b.addTxs(l.map((t) => ({ ...t, by: t.by || uid, byName: t.byName || name || '' }))),
-    undo: () => b.undo(uid), srvGet: () => b.srvGet(), srvPatch: (x) => b.srvPatch(x), aiTick: (d, m) => b.aiTick(d, m),
+    undo: () => b.undo(uid), subSet: (i, p) => b.subSet(i, p), srvGet: () => b.srvGet(), srvPatch: (x) => b.srvPatch(x), aiTick: (d, m) => b.aiTick(d, m),
     remAdd: (x) => own.remAdd(x), remList: () => own.remList(), remDel: (i) => own.remDel(i), remDue: (n) => own.remDue(n), remSent: (i, d) => own.remSent(i, d),
     setPending: (x) => own.setPending(x), takePending: () => own.takePending(), seenUpd: (i) => own.seenUpd(i),
   };
@@ -1235,6 +1257,14 @@ async function onUpdate(update, env, origin) {
     const sub = (state0.subs || []).find((x) => String(x.id) === id);
     if (!sub) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Платёж не найден' }); return; }
     if (act === 'skip') { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Ок' }); await edit(`⏭ ${sub.name}: в этот раз пропускаем.`, { inline_keyboard: [] }); return; }
+    if (act === 'ed') {
+      await st.srvPatch({ subAsk: { id: sub.id, by: q.from.id, at: Date.now() } });
+      await tg(env, 'answerCallbackQuery', { callback_query_id: q.id });
+      await edit(`✏️ ${sub.ic || '💳'} ${sub.name}: сколько заплатил в этот раз? Напиши сумму числом, например 650.
+
+Запишу трату и обновлю сумму платежа на следующие месяцы.`, { inline_keyboard: [] });
+      return;
+    }
     const envId = getCats(state0).some((c) => c.id === sub.env) ? sub.env : (detectEnv(sub.name, state0) || getCats(state0)[0].id);
     const tx = makeTx({ sum: sub.sum, cur: sub.cur, note: sub.name, date: null }, envId, state0, await getRates());
     if (!tx) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: 'Не смог получить курс, попробуй позже' }); return; }
@@ -1536,6 +1566,25 @@ async function onUpdate(update, env, origin) {
   }
 
   const state = (await st.getState()) || {};
+  const ask = state.srv && state.srv.subAsk;
+  if (ask && ask.by === uid) {
+    await st.srvPatch({ subAsk: null });
+    const m = text.replace(/\s+/g, '').replace(',', '.').match(/^(\d+(?:\.\d+)?)(₽|р|руб|rub|¥|юаней|yuan|cny|\$|usd)?\.?$/i);
+    const sub = (state.subs || []).find((x) => String(x.id) === String(ask.id));
+    if (m && sub && Date.now() - ask.at < 6 * 36e5) {
+      const sum = +m[1];
+      const envId = getCats(state).some((c) => c.id === sub.env) ? sub.env : (detectEnv(sub.name, state) || getCats(state)[0].id);
+      const tx = makeTx({ sum, cur: sub.cur, note: sub.name, date: null }, envId, state, await getRates());
+      if (!tx) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Не смог получить курс, попробуй ещё раз позже.' }); return; }
+      await st.addTx(tx);
+      const s2 = await st.subSet(sub.id, { sum });
+      if (st.owner === uid && s2) await reg.regUpdate(uid, { subs: (s2.subs || []).slice(0, 50) });
+      await tg(env, 'sendMessage', { chat_id: chat, text: `🔁 ${summary(s2 || state, envId, tx)}
+
+✏️ Сумма платежа «${sub.name}» теперь ${fmt(sum, sub.cur || state.cur || 'RUB')}. Под неё же буду держать резерв в конверте.`, reply_markup: appButton(origin) });
+      return;
+    }
+  }
   const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   if (lines.length > 1) {
     const items = lines.map((l) => ({ l, p: parseExpense(l, state) }));

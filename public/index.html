@@ -386,7 +386,10 @@ textarea{width:100%;box-sizing:border-box;font:500 15px var(--body);color:var(--
 .last-row .tx-t{flex:1;min-width:0}
 .last-row .tx-t small{display:block;color:var(--muted);font-size:12px}
 .last-row b{font-variant-numeric:tabular-nums;font-weight:600}
-.sub-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.sub-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px;cursor:pointer}
+.env-res{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.35}.env-res.warn{color:var(--bad);font-weight:600}
+body.mode-simple .env-res{display:none!important}
+.sub-ed{display:flex;flex-direction:column;gap:10px;margin-top:8px}
 .sub-row .tx-t{flex:1;min-width:0}.sub-row .tx-t small{display:block;color:var(--muted);font-size:12px}
 .subform{display:grid;gap:8px;margin-top:8px}
 .subform .sumrow{display:grid;grid-template-columns:1fr 110px;gap:8px}
@@ -956,6 +959,7 @@ function buildCats(){
  <div class="pct-row"><input class="range" type="range" data-pct="${e.id}" min="0" max="100" step="1" value="0" aria-label="Доля, %"><b class="pctv" data-pv="${e.id}"></b></div>
  <div class="bar" data-bar="${e.id}"><i></i></div>
  <div class="env-meta"><span data-m="${e.id}"></span><span class="r" data-r="${e.id}"></span><span class="trend" data-tr="${e.id}"></span></div>
+ ${e.save?'':`<div class="env-res" data-rs="${e.id}" hidden></div>`}
  ${e.save?`<div class="goal"><div class="row"><label>🎯 Стоимость цели, <span class="cs">₽</span></label><input type="number" data-tg="${e.id}" min="0" step="1000" value="${e.target||0}"></div>
  <div class="row"><label>🐷 Уже накоплено раньше, <span class="cs">₽</span></label><input type="number" data-gb="${e.id}" min="0" step="1000" value="${e.before||0}"></div>
  <div class="bar"><i data-gbar="${e.id}"></i></div><div data-gtext="${e.id}"></div></div>`:''}</div>`).join('');
@@ -985,6 +989,13 @@ function render(){
     e.all=S.tx.filter(t=>t.env===e.id).reduce((a,t)=>a+t.sum,0);
     e.p=free?(e.amt||0)/free*100:0;
   });
+  /* регулярные платежи: резерв в конверте и минимум лимита */
+  {const sm=x=>conv(x.sum,x.cur||S.cur,S.cur)||0,nm=v=>String(v||'').trim().toLowerCase(),on=(S.subs||[]).filter(x=>x.on!==false);
+   S.cats.forEach(e=>{const my=e.save?[]:on.filter(x=>x.env===e.id);
+     e.subMin=Math.round(my.reduce((a,x)=>a+sm(x),0));
+     e.resList=my.filter(x=>!txP.some(t=>t.env===e.id&&nm(t.note)===nm(x.name)));
+     e.res=Math.round(e.resList.reduce((a,x)=>a+sm(x),0));
+     if(!simple&&e.subMin&&(e.amt||0)<e.subMin)e.amt=e.subMin;});}
   applyMode(P);
   /* шапка периода */
   $('pLabel').textContent=P.label;
@@ -1029,6 +1040,10 @@ function render(){
     else if(e.prev>0&&e.spent>0){const d=Math.round((e.spent-e.prev)/e.prev*100);tr.className='trend '+(d>0?'up':'down');tr.textContent=(d>0?'▲ +':'▼ ')+d+'%'}
     else tr.textContent='';
     if(e.save)renderGoal(e);
+    const rs=q('rs',e.id);
+    if(rs){const show=!simple&&e.subMin>0;rs.hidden=!show;
+      if(show){const fr=left-e.res;rs.className='env-res'+(fr<0?' warn':'');
+        rs.textContent=e.res?`🔒 ${fmt(e.res)} отложено на платежи: ${e.resList.map(x=>x.name).join(', ')}. `+(fr<0?`Не хватает ${fmt(-fr)}`:`Свободно ${fmt(fr)}`):`✅ Регулярные платежи за месяц оплачены (${fmt(e.subMin)})`}}
   });
   /* KPI конвертов */
   const sc=spendCats(), plan=sc.reduce((a,e)=>a+(e.amt||0),0), spent=sc.reduce((a,e)=>a+e.spent,0);
@@ -1223,7 +1238,22 @@ $('allTx').addEventListener('click',()=>{selectTab('t-tx');window.scrollTo({top:
 function renderSubs(){
   const list=(S.subs||[]).slice().sort((a,b)=>daysTo(+a.day||1)-daysTo(+b.day||1));
   const tot=list.filter(x=>x.on!==false).reduce((a,x)=>a+subMain(x),0);
-  $('subsList').innerHTML=list.length?list.map(x=>`<div class="sub-row"><span style="font-size:20px">${x.ic||'💳'}</span><span class="tx-t">${esc(x.name)}<small>${x.day}-го числа · следующий ${inDays(daysTo(+x.day||1))}</small></span><b>${fmtC(x.sum,x.cur||S.cur)}</b><button type="button" class="del" data-sdel="${x.id}" aria-label="Удалить">🗑</button></div>`).join('')+`<p class="hint" style="margin-top:8px">Всего ≈ <b>${fmt(tot)}</b> в месяц</p>`:'';
+  $('subsList').innerHTML=list.length?list.map(x=>`<div class="sub-row" data-sid="${x.id}"><span style="font-size:20px">${x.ic||'💳'}</span><span class="tx-t">${esc(x.name)}<small>${x.day}-го числа · следующий ${inDays(daysTo(+x.day||1))}</small></span><b>${fmtC(x.sum,x.cur||S.cur)}</b><button type="button" class="del" data-sdel="${x.id}" aria-label="Удалить">🗑</button></div>`).join('')+`<p class="hint" style="margin-top:8px">Всего ≈ <b>${fmt(tot)}</b> в месяц. Нажми на платёж, чтобы изменить сумму или день</p>`:'';
+}
+function subEdit(id){
+  const x=(S.subs||[]).find(y=>String(y.id)===String(id));if(!x)return;
+  const bg=document.createElement('div');bg.className='sheet-bg';
+  bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><h3>${x.ic||'💳'} ${esc(x.name)}</h3><p>Сумма поменялась? Впиши новую, и резерв в конверте пересчитается.</p>
+  <div class="sub-ed"><div class="sumrow"><input type="number" id="seSum" min="0" step="1" inputmode="decimal" value="${x.sum}"><span style="align-self:center">${esc(sym(x.cur||S.cur))}</span></div>
+  <select id="seEnv" aria-label="Категория">${spendCats().map(e=>`<option value="${e.id}"${e.id===x.env?' selected':''}>${e.ic} ${esc(e.name)}</option>`).join('')}</select>
+  <div class="row"><label for="seDay">Какого числа платить</label><select id="seDay">${[...Array(31)].map((_,i)=>`<option value="${i+1}"${+x.day===i+1?' selected':''}>${i+1}-го</option>`).join('')}</select></div>
+  <button type="button" class="btn" data-b="ok">Сохранить</button></div></div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click',e=>{if(e.target===bg){bg.remove();return}
+    if(!e.target.closest('[data-b=ok]'))return;
+    const sum=parseFloat(bg.querySelector('#seSum').value);if(!(sum>0)){toast('Впиши сумму');return}
+    x.sum=sum;x.day=+bg.querySelector('#seDay').value;x.env=bg.querySelector('#seEnv').value;x.ic=byId(x.env).ic||x.ic;
+    bg.remove();save();render();toast(`✏️ «${x.name}»: ${fmtC(x.sum,x.cur||S.cur)}, ${x.day}-го числа`)});
 }
 $('sbDay').innerHTML=[...Array(31)].map((_,i)=>`<option value="${i+1}">${i+1}-го</option>`).join('');
 $('subAddBtn').addEventListener('click',()=>{const f=$('subForm');f.hidden=!f.hidden;if(!f.hidden){
@@ -1235,8 +1265,8 @@ $('sbSave').addEventListener('click',()=>{
   const name=$('sbName').value.trim(),sum=parseFloat($('sbSum').value);
   if(!name){toast('Впиши название');return} if(!(sum>0)){toast('Впиши сумму');return}
   const env=$('sbEnv').value;S.subs=[...(S.subs||[]),{id:Date.now(),name,sum,cur:$('sbCur').value,env,ic:byId(env).ic,day:+$('sbDay').value,on:true}];
-  $('sbName').value='';$('sbSum').value='';$('subForm').hidden=true;save();render();toast(`🔁 «${name}» добавлен. Напомню ${$('sbDay').value}-го числа`);burst(['🔁','✨'],null,null,10)});
-$('subsList').addEventListener('click',e=>{const b=e.target.closest('[data-sdel]');if(!b)return;
+  $('sbName').value='';$('sbSum').value='';$('subForm').hidden=true;const ea=byId(env).amt||0;save();render();const eb=byId(env);toast(`🔁 «${name}» добавлен. Напомню ${$('sbDay').value}-го числа`+(S.mode!=='simple'&&(eb.amt||0)>ea?`. Лимит «${eb.name}» поднят до ${fmt(eb.amt)} под платежи`:''));burst(['🔁','✨'],null,null,10)});
+$('subsList').addEventListener('click',e=>{const b=e.target.closest('[data-sdel]');if(!b){const r=e.target.closest('[data-sid]');if(r)subEdit(r.dataset.sid);return}
   if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='Удалить?';setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.textContent='🗑'}},2500);return}
   S.subs=S.subs.filter(x=>String(x.id)!==b.dataset.sdel);save();render()});
 
@@ -1643,6 +1673,10 @@ function deleteCat(id){
     S.tx.forEach(t=>{if(t.env===id)t.env=other.id});}
   S.cats=S.cats.filter(x=>x.id!==id);buildCats();render();toast(`🗑️ «${c.name}» удалена`);
 }
+$('p-env').addEventListener('change',e=>{const t=e.target,id=t.dataset.amt||t.dataset.pct;if(!id||S.mode==='simple')return;
+  const c=byId(id);if(!c||!c.subMin)return;
+  const want=t.dataset.amt?(parseFloat(t.value)||0):Math.round(Math.max(0,S.income-S.rent-S.loans)*t.value/100/10)*10;
+  if(want<c.subMin){if(t.dataset.amt)t.value=c.amt;toast(`🔒 Меньше ${fmt(c.subMin)} нельзя: столько в «${c.name}» уходит на регулярные платежи`)}});
 $('p-env').addEventListener('input',e=>{
   const t=e.target, free=Math.max(0,S.income-S.rent-S.loans);
   if(['income','rent','loans'].includes(t.id)){S[t.id]=num(t.id)}
@@ -1678,6 +1712,7 @@ $('trGo').addEventListener('click',()=>{
   const f=byId($('trFrom').value), t=byId($('trTo').value), x=num('trSum');
   if(f.id===t.id){toast('Выбери разные конверты');return} if(!x){toast('Впиши сумму');return}
   if(x>(f.amt||0)){toast(`В «${f.name}» всего ${fmt(f.amt||0)}`);return}
+  if(S.mode!=='simple'&&f.subMin&&(f.amt||0)-x<f.subMin){toast(`🔒 Из «${f.name}» можно перенести максимум ${fmt(Math.max(0,(f.amt||0)-f.subMin))}: остальное на регулярные платежи`);return}
   f.amt-=x;t.amt=(t.amt||0)+x;$('trSum').value='';render();toast(`↔️ ${fmt(x)}: «${f.name}» → «${t.name}»`);burst(['💸',t.ic]);
 });
 
@@ -1924,7 +1959,7 @@ const HELP={
   game:['🔥 Серия и значки','Серия — сколько дней подряд ты записываешь траты (или отмечаешь «день без трат» в боте). За привычки и достижения открываются значки, а за записи и значки растёт уровень.'],
   ins:['💡 Подсказки','Я смотрю на твои траты и замечаю главное: где тратишь больше, чем в прошлом месяце, на что уходит больше всего, сколько было дней без трат.','Подсказки обновляются с каждой новой тратой.'],
   cal:['🗓 Календарь трат','Каждый квадрат — день месяца. Чем ярче цвет, тем больше ты в этот день потратил. 🧘 — день без трат. Нажми на день, чтобы увидеть, что там было.'],
-  subs:['🔁 Регулярные платежи','Платежи, которые повторяются каждый месяц: интернет, аренда, связь, подписки. В нужный день бот пришлёт напоминание с кнопкой «Оплатил», и трата запишется сама.','Ещё боту можно написать «подписки», и он покажет список и сумму в месяц.'],
+  subs:['🔁 Регулярные платежи','Платежи, которые повторяются каждый месяц: интернет, аренда, связь, подписки. Их сумма сразу откладывается в своём конверте 🔒, и лимит конверта нельзя сделать меньше неё. В нужный день бот пришлёт напоминание с кнопкой «Оплатил», и трата запишется сама. Сумма поменялась? Нажми на платёж и впиши новую.','Ещё боту можно написать «подписки», и он покажет список и сумму в месяц.'],
   today:['☀️ Можно сегодня','Сколько ещё можно потратить сегодня, чтобы уложиться в план месяца. Считается так: (план − траты до сегодня) ÷ дни до конца месяца, минус то, что уже потрачено сегодня.','Потратил меньше — завтра можно будет чуть больше. Больше — завтрашняя норма станет меньше.'],
   alloc:['✅ Что значит «ровно 100%»','Свободные деньги (доход минус аренда и кредиты) должны целиком разойтись по конвертам. Тогда у каждого рубля есть задача: на еду, на транспорт, в копилку.','Меньше 100% — часть денег «ничья», и она обычно незаметно утекает. Положи остаток в копилку.\nБольше 100% — ты запланировал больше, чем у тебя есть. Уменьши какие-то конверты.\nРовно 100% — всё правильно 👍'],
   kspent:['💸 Потрачено','Сколько ты уже потратил в этом месяце (без копилок). Зелёная плашка — ты тратишь медленнее плана, красная — быстрее.'],
