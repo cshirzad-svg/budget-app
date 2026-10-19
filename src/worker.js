@@ -730,9 +730,39 @@ const LLM = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const VISION = '@cf/meta/llama-3.2-11b-vision-instruct';
 const AI_MAX = 15;
 async function aiText(env, messages, max = 1400, model = LLM) {
+  if (/gpt-oss/.test(model)) {
+    const sys = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n');
+    const r = await env.AI.run(model, { instructions: sys, input: messages.filter((m) => m.role !== 'system').map((m) => m.content).join('\n'), reasoning: { effort: 'low' }, max_output_tokens: max + 1500 });
+    if (r && typeof r.output_text === 'string') return r.output_text;
+    const parts = [];
+    for (const o of (r && r.output) || []) for (const c of o.content || []) if (c.type === 'output_text' && c.text) parts.push(c.text);
+    if (parts.length) return parts.join('');
+    const v = r && (r.response || (r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content));
+    return typeof v === 'string' ? v : v ? JSON.stringify(v) : '';
+  }
   const r = await env.AI.run(model, { messages, max_tokens: max, temperature: 0.6 });
-  const v = r && r.response;
+  const v = r && (r.response ?? (r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content));
   return typeof v === 'string' ? v : v ? JSON.stringify(v) : '';
+}
+/* качество меню: разнообразие, без «вчерашний» вместо названия */
+const dishKey = (x) => String(x).toLowerCase().replace(/\(.*?\)/g, '').replace(/[^а-яёa-z ]/g, '').trim();
+export function fixMenu(m) {
+  for (let i = 0; i < 7; i++) for (let k = 1; k <= 3; k++) {
+    const v = m.days[i][k];
+    if (/^\(?\s*вчерашн/i.test(v)) {
+      const prev = i > 0 ? String(m.days[i - 1][3]) : '';
+      const same = k > 1 ? String(m.days[i][k - 1]).replace(/\s*\((вчерашн|с обеда)[^)]*\)/i, '').trim() : '';
+      m.days[i][k] = prev && !/\(|вчерашн|^—$/i.test(prev) ? `${prev} (вчерашний)` : same && same !== '—' ? `${same} (с обеда)` : '—';
+    }
+  }
+  return m;
+}
+export function menuScore(m) {
+  const all = m.days.flatMap((d) => d.slice(1)).filter((x) => x && x !== '—');
+  const uniq = new Set(all.map(dishKey)).size;
+  const rows = new Set(m.days.map((d) => d.slice(1).map(dishKey).join('|'))).size;
+  const items = m.shop.reduce((a, [, it]) => a + it.length, 0);
+  return { uniq, rows, items, ok: uniq >= 11 && rows === 7 && items >= 12 };
 }
 export function pickJSON(t) {
   if (!t) return null;
@@ -807,21 +837,29 @@ export async function makeMenu(env, state, request) {
   const weekBudget = food && food.amt ? conv(food.amt / 4.345, state.cur || 'RUB', 'RUB', rates) : null;
   const prefs = (srv.prefs || []).join(', ');
   const sys = 'Ты повар-экономист. Составляешь простое домашнее меню на 7 дней (завтрак, обед, ужин) и список покупок на всю неделю. ' +
-    'Используй остатки: суп или основное блюдо можно есть 2 дня подряд, пиши «(вчерашний)». Блюда реальные, понятные, по-русски. ' +
+    'Меню должно быть разнообразным: минимум 12 разных блюд за неделю, ни один день не повторяет другой целиком. Завтраки — именно завтраки (каши, яйца, блины, сырники, бутерброды; для азиатской кухни — баоцзы, рисовая каша, яичные блюда). ' +
+    'Остатки можно использовать: суп или основное блюдо можно доесть на следующий день, тогда пиши полное название и «(вчерашний)», например «Суп с лапшой (вчерашний)». Никогда не пиши просто «вчерашний». Так — не чаще 3 раз за неделю. Блюда реальные, понятные, по-русски. ' +
+    'Список покупок должен покрывать все блюда меню: обычно 15–30 позиций. ' +
     'Количества — на всю неделю для указанного числа людей. Единицы: кг, л, шт., уп. Цена — примерная средняя цена в рублях за 1 единицу в обычном российском супермаркете в 2026 году. ' +
     'Если просят кухню другой страны (китайскую, японскую, кавказскую и т.п.), пиши русские названия блюд без иероглифов и бери продукты, которые можно купить в обычном магазине. ' +
     'Названия блюд короткие (до 4 слов), в каждой группе покупок не больше 8 позиций. Отвечай ТОЛЬКО JSON без пояснений и без ```, строго в формате: ' +
     '{"title":"короткое название недели","days":[["Пн","завтрак","обед","ужин"], ... 7 строк],"shop":[["🥩 Мясо и рыба",[["Куриное филе",1.5,"кг",420]]],["🌾 Крупы",[...]],["🥕 Овощи и фрукты",[...]],["🥛 Молочное и яйца",[...]],["🍞 Прочее",[...]]]}';
   const user = `Людей: ${people}. ${weekBudget ? `Бюджет на продукты на неделю: около ${Math.round(weekBudget)} рублей, постарайся уложиться. ` : ''}${prefs ? `Не использовать / учесть: ${prefs}. ` : ''}Пожелания: ${request || 'обычное сытное и недорогое меню'}.`;
   const msgs = [{ role: 'system', content: sys }, { role: 'user', content: user }];
-  let m = null;
-  for (const model of [LLM, '@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct']) {
+  let m = null, best = null, bestSc = -1;
+  for (const model of ['@cf/openai/gpt-oss-120b', LLM, '@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct']) {
     let out = '';
     try { out = await aiText(env, msgs, 3500, model); } catch (e) { console.error('menu ai', model, e); continue; }
-    m = cleanMenu(pickJSON(out), people);
-    if (m) break;
-    console.error('menu bad json', model, out.length, out.slice(0, 200), '…', out.slice(-200));
+    const c = cleanMenu(pickJSON(out), people);
+    if (!c) { console.error('menu bad json', model, out.length, out.slice(0, 200), '…', out.slice(-200)); continue; }
+    fixMenu(c);
+    const sc = menuScore(c);
+    const val = sc.uniq + sc.rows * 2 + Math.min(sc.items, 25) / 5;
+    if (val > bestSc) { best = c; bestSc = val; }
+    if (sc.ok) { m = c; break; }
+    console.error('menu weak', model, JSON.stringify(sc));
   }
+  if (!m) m = best;
   if (m) m.q = request || '';
   return m;
 }
