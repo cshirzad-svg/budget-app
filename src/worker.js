@@ -760,20 +760,43 @@ export function fixCut(t) {
 }
 const DAYS7 = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MEALS = ['завтрак', 'обед', 'ужин'];
+const noCJK = (x) => String(x == null ? '' : x).replace(/[\u3000-\u9fff\uf900-\ufaff]+/g, '').replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+const DAYKEY = { пн: 0, пон: 0, вт: 1, ср: 2, чт: 3, чет: 3, пт: 4, пят: 4, сб: 5, суб: 5, вс: 6, вос: 6 };
+function dayRows(d) {
+  if (!d) return [];
+  if (!Array.isArray(d) && typeof d === 'object') {
+    const out = [];
+    for (const [k, v] of Object.entries(d)) { const i = DAYKEY[k.toLowerCase().slice(0, 3)] ?? DAYKEY[k.toLowerCase().slice(0, 2)]; if (i != null) out[i] = v; }
+    return out.length ? out : Object.values(d);
+  }
+  return d;
+}
+function mealsOf(x) {
+  if (Array.isArray(x)) { const a = x.map((v) => (v && typeof v === 'object' ? v.n || v.name || v.dish || '' : v)); return a.length >= 4 ? a.slice(1, 4) : a.slice(0, 3); }
+  if (x && typeof x === 'object') {
+    const g = (...ks) => { for (const k of ks) if (x[k] != null) return x[k]; return ''; };
+    return [g('b', 'завтрак', 'breakfast'), g('l', 'обед', 'lunch'), g('dn', 'd2', 'ужин', 'dinner')];
+  }
+  return [];
+}
 export function cleanMenu(j, people) {
-  if (!j || !Array.isArray(j.days) || !Array.isArray(j.shop)) return null;
-  const days = DAYS7.map((d, i) => { const x = j.days[i] || []; const arr = Array.isArray(x) ? x : [x.d, x.b, x.l, x.dn]; return [d, ...[1, 2, 3].map((k) => String(arr[k] || '—').slice(0, 80))]; });
+  if (!j || typeof j !== 'object') return null;
+  const rows = dayRows(j.days || j.menu || j['меню']);
+  const shopRaw = j.shop || j.shopping || j['покупки'];
+  if (!rows.length || !shopRaw) return null;
+  const days = DAYS7.map((d, i) => [d, ...[0, 1, 2].map((k) => noCJK(mealsOf(rows[i])[k]).slice(0, 80) || '—')]);
+  const groups = Array.isArray(shopRaw) ? shopRaw : Object.entries(shopRaw).map(([c, i]) => [c, i]);
   const shop = [];
-  for (const g of j.shop.slice(0, 10)) {
-    const name = String((Array.isArray(g) ? g[0] : g.c) || '🧺 Продукты').slice(0, 30);
-    const items = ((Array.isArray(g) ? g[1] : g.i) || []).slice(0, 25).map((it) => {
-      const [n, q, u, pr] = Array.isArray(it) ? it : [it.n, it.q, it.u, it.p];
-      return [Math.max(0.05, +q || 1), String(u || 'шт.').slice(0, 6), String(n || '').slice(0, 40), Math.max(0, +pr || 0)];
+  for (const g of groups.slice(0, 10)) {
+    const name = noCJK((Array.isArray(g) ? g[0] : g.c || g.name || g.category) || '🧺 Продукты').slice(0, 30) || '🧺 Продукты';
+    const items = ((Array.isArray(g) ? g[1] : g.i || g.items) || []).slice(0, 25).map((it) => {
+      const [n, q, u, pr] = Array.isArray(it) ? it : [it.n || it.name, it.q || it.qty, it.u || it.unit, it.p || it.price];
+      return [Math.max(0.05, parseFloat(q) || 1), String(u || 'шт.').slice(0, 6), noCJK(n).slice(0, 40), Math.max(0, parseFloat(pr) || 0)];
     }).filter((x) => x[2]);
     if (items.length) shop.push([name, items]);
   }
   if (!shop.length || days.filter((d) => d[1] !== '—').length < 5) return null;
-  return { title: String(j.title || 'Твоё меню').slice(0, 60), days, shop, p: people, at: Date.now() };
+  return { title: noCJK(j.title || 'Твоё меню').slice(0, 60) || 'Твоё меню', days, shop, p: people, at: Date.now() };
 }
 const basketRub = (m) => m.shop.reduce((a, [, items]) => a + items.reduce((b, [q, , , pr]) => b + q * pr, 0), 0);
 export async function makeMenu(env, state, request) {
@@ -786,14 +809,15 @@ export async function makeMenu(env, state, request) {
   const sys = 'Ты повар-экономист. Составляешь простое домашнее меню на 7 дней (завтрак, обед, ужин) и список покупок на всю неделю. ' +
     'Используй остатки: суп или основное блюдо можно есть 2 дня подряд, пиши «(вчерашний)». Блюда реальные, понятные, по-русски. ' +
     'Количества — на всю неделю для указанного числа людей. Единицы: кг, л, шт., уп. Цена — примерная средняя цена в рублях за 1 единицу в обычном российском супермаркете в 2026 году. ' +
+    'Если просят кухню другой страны (китайскую, японскую, кавказскую и т.п.), пиши русские названия блюд без иероглифов и бери продукты, которые можно купить в обычном магазине. ' +
     'Названия блюд короткие (до 4 слов), в каждой группе покупок не больше 8 позиций. Отвечай ТОЛЬКО JSON без пояснений и без ```, строго в формате: ' +
     '{"title":"короткое название недели","days":[["Пн","завтрак","обед","ужин"], ... 7 строк],"shop":[["🥩 Мясо и рыба",[["Куриное филе",1.5,"кг",420]]],["🌾 Крупы",[...]],["🥕 Овощи и фрукты",[...]],["🥛 Молочное и яйца",[...]],["🍞 Прочее",[...]]]}';
   const user = `Людей: ${people}. ${weekBudget ? `Бюджет на продукты на неделю: около ${Math.round(weekBudget)} рублей, постарайся уложиться. ` : ''}${prefs ? `Не использовать / учесть: ${prefs}. ` : ''}Пожелания: ${request || 'обычное сытное и недорогое меню'}.`;
   const msgs = [{ role: 'system', content: sys }, { role: 'user', content: user }];
   let m = null;
-  for (const model of [LLM, '@cf/meta/llama-4-scout-17b-16e-instruct']) {
+  for (const model of [LLM, '@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct']) {
     let out = '';
-    try { out = await aiText(env, msgs, 2600, model); } catch (e) { console.error('menu ai', model, e); continue; }
+    try { out = await aiText(env, msgs, 3500, model); } catch (e) { console.error('menu ai', model, e); continue; }
     m = cleanMenu(pickJSON(out), people);
     if (m) break;
     console.error('menu bad json', model, out.length, out.slice(0, 200), '…', out.slice(-200));
