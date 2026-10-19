@@ -36,19 +36,14 @@ const GIFT_MSG = {
 };
 
 /* ---------- рассылка ---------- */
-const BC_VER = 'news-2';
-const BC_DOC = 'gift/7-dyr-v-byudzhete.pdf';
-const BC_TEXT = (gift) => 'Привет! 👋 Держи подарок выше: чек-лист «7 дыр, через которые утекает зарплата».\n\n' +
-  'Начни со страницы 3. Там тест на 15 минут: берёшь выписку за прошлый месяц и сразу видишь, сколько денег ушло «никуда».\n\n' +
-  'А чтобы не считать это руками, просто пиши траты сюда, бот сам разложит их по конвертам 👇\n\n' +
+const BC_VER = 'news-2b';
+const BC_TEXT = (gift) => 'Привет! 👋 Небольшая новость от бота «Бюджет в конвертах».\n\n' +
   (gift
     ? '🎁 У тебя полный доступ навсегда и бесплатно, ничего платить не нужно.\n\n'
-    : '📄 <b>Ещё мы оформили условия.</b> Первые 3 дня бесплатно, дальше полный доступ навсегда за 990 ₽: один платёж, без подписки, а если передумаешь в течение 14 дней — вернём деньги. Оплата картой и через СБП скоро заработает.\n\n') +
-  'Оферта: <a href="https://konverty.app/offer">konverty.app/offer</a>\nКонфиденциальность: <a href="https://konverty.app/privacy">konverty.app/privacy</a>';
+    : '📄 <b>Мы оформили условия.</b> Первые 3 дня бесплатно, дальше полный доступ навсегда за 990 ₽: один платёж, без подписки, а если передумаешь в течение 14 дней — вернём деньги. Оплата картой и через СБП скоро заработает.\n\n') +
+  'Оферта: <a href="https://konverty.app/offer">konverty.app/offer</a>\nКонфиденциальность: <a href="https://konverty.app/privacy">konverty.app/privacy</a>\n\n' +
+  'Пиши траты сюда, как другу, бот сам разложит их по конвертам 👇';
 async function sendNews(env, chat, gift, origin) {
-  const base = env.ORIGIN || origin + '/';
-  const a = await tg(env, 'sendDocument', { chat_id: chat, document: new URL(BC_DOC, base).href, caption: '🎁 Подарок: 7 дыр, через которые утекает зарплата' });
-  if (!a.ok && a.error_code === 403) return a;
   return tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text: BC_TEXT(gift), reply_markup: appButton(origin), disable_web_page_preview: true });
 }
 
@@ -1429,10 +1424,6 @@ async function onUpdate(update, env, origin) {
   if (text.startsWith('/start') || text.startsWith('/help')) {
     const src = (text.match(/^\/start\s+([\w-]{1,32})/) || [])[1];
     if (src) { const cur = await reg.regGet(uid); if (cur && !cur.src) await reg.regUpdate(uid, { src }); }
-    if (src && /^(check|gift|kontrol|7)/.test(src)) {
-      await tg(env, 'sendDocument', { chat_id: chat, document: 'https://konverty.app/gift/7-dyr-v-byudzhete.pdf',
-        caption: '🎁 Держи чек-лист «7 дыр, через которые утекает зарплата».\n\nНачни со страницы 3: тест на 15 минут покажет, сколько у тебя утекает за месяц. А ниже — бот, который будет считать это за тебя 👇' });
-    }
     if (kw === 'help' || text.startsWith('/help')) {
       await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', reply_markup: KB, text:
         '💡 <b>Как со мной общаться</b>\n\n' +
