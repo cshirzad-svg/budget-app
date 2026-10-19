@@ -1643,7 +1643,7 @@ export default {
         '⏰ Напомню об оплатах, пришлю итоги недели и месяца.\n\n' +
         `💳 3 дня бесплатно, дальше полный доступ навсегда — ${priceRub(env)} ₽ (разово).\n\n` +
         `${legal(env).FIO}, самозанятый, ИНН ${legal(env).INN}\nОферта: konverty.app/offer\n\nЖми «Старт» 👇` });
-      const rs = await tg(env, 'setMyShortDescription', { short_description: '💌 Бюджет в Telegram: пиши траты как другу, а я посчитаю, сколько можно тратить сегодня.' });
+      const rs = await tg(env, 'setMyShortDescription', { short_description: `💌 Бюджет в Telegram. 3 дня бесплатно, потом ${priceRub(env)} ₽ навсегда. ${legal(env).FIO}, самозанятый, ИНН ${legal(env).INN}` });
       return new Response(
         (r.ok ? '✅ Готово! Бот подключён к серверу. Можно закрыть страницу и писать боту.' : '❌ Ошибка: ' + JSON.stringify(r)) + `\n\nКоманды: ${rc.ok ? '✅' : '❌ ' + JSON.stringify(rc)}\nОписание: ${rd.ok ? '✅' : '❌ ' + JSON.stringify(rd)}\nКороткое описание: ${rs.ok ? '✅' : '❌ ' + JSON.stringify(rs)}`,
         { headers: { 'content-type': 'text/plain; charset=utf-8' } },
