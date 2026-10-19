@@ -19,6 +19,10 @@ new_sqlite_classes = ["UserStore"]
 [vars]
 ORIGIN = "https://konverty.app/"
 PRICE_RUB = "990"
+LEGAL_FIO = "Ширзад Самир Салим"
+LEGAL_INN = "222412883999"
+LEGAL_CITY = "Алтайский край"
+LEGAL_DATE = "19.10.2026"
 
 [triggers]
 crons = ["*/5 * * * *"]
