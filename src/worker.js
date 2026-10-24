@@ -549,7 +549,7 @@ export function weekText(state) {
   const big = w.reduce((a, t) => (t.sum > a.sum ? t : a), w[0]);
   let out = `📊 <b>Неделя в цифрах</b>\n\n💸 Потрачено: <b>${fmt(s, main)}</b>`;
   if (ps) { const d = Math.round(((s - ps) / ps) * 100); out += d > 0 ? `\n📈 На ${d}% больше, чем неделей раньше` : d < 0 ? `\n📉 На ${-d}% меньше, чем неделей раньше 👏` : '\nСтолько же, сколько неделей раньше'; }
-  out += `\n\nБольше всего:\n${top.join('\n')}`;
+  out += `\n\nПо категориям:\n${top.join('\n')}`;
   out += `\n\n🧾 Самая крупная трата: ${fmt(big.sum, main)}${big.note ? ' — ' + big.note : ''}`;
   if (noSpend) out += `\n🧘 Дней без трат: ${noSpend}`;
   return out;
