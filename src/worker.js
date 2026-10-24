@@ -372,13 +372,20 @@ const dateHuman = (d, state) => {
   return `${+d.slice(8)} ${MON3[+d.slice(5, 7) - 1]}`;
 };
 
+/* «вода в продукты» → «вода», если «продукты» — это выбранная категория */
+function cleanNote(note, envId, state) {
+  const m = String(note || '').match(/^(.+?)\s+(?:в|во|на)\s+([а-яёa-z]+)$/i);
+  if (!m) return note;
+  const c = catInfo(envId, state), w = m[2].toLowerCase(), n = String(c.name || '').toLowerCase();
+  return n && w.length >= 3 && (n.startsWith(w.slice(0, 4)) || w.startsWith(n.slice(0, 4))) ? m[1] : note;
+}
 function makeTx(p, envId, state, rates) {
   const main = state.cur || 'RUB';
   const cur = p.cur || main;
   const base = conv(p.sum, cur, main, rates);
   if (base == null) return null;
   const usd = conv(p.sum, cur, 'USD', rates);
-  return { id: Date.now(), date: p.date || todayStr(state), env: envId, sum: Math.round(base), orig: p.sum, cur, usd: usd == null ? null : Math.round(usd * 100) / 100, note: p.note, src: 'bot' };
+  return { id: Date.now(), date: p.date || todayStr(state), env: envId, sum: Math.round(base), orig: p.sum, cur, usd: usd == null ? null : Math.round(usd * 100) / 100, note: cleanNote(p.note, envId, state), src: 'bot' };
 }
 
 export function monthReport(state, rates, off = 0) {
@@ -732,7 +739,11 @@ export function todayText(state) {
     const norm = Math.max(0, (plan - before) / Math.max(1, P.days - P.elapsed + 1)), left = norm - todS;
     out = left >= 0 ? `☀️ Сегодня можно ещё <b>${fmt(left, main)}</b>\nНорма на день ${fmt(norm, main)}, потрачено ${fmt(todS, main)}.` : `😬 Сегодня уже сверх нормы на <b>${fmt(-left, main)}</b>\nНорма на день ${fmt(norm, main)}, потрачено ${fmt(todS, main)}.`;
   } else out = `☀️ Сегодня потрачено: <b>${fmt(todS, main)}</b>\nЗа месяц: ${fmt(sumOf(spT), main)}.`;
-  if (tod.length) out += '\n\n' + tod.slice(-8).map((t) => { const c = catInfo(t.env, state); return `${c.ic} ${t.note || c.name} — ${fmt(t.sum, main)}`; }).join('\n');
+  if (tod.length) {
+    const sh = tod.length > 12 ? tod.slice(-10) : tod, hid = tod.slice(0, tod.length - sh.length);
+    out += '\n\n' + (hid.length ? `… ещё ${hid.length} ${plural(hid.length, 'запись', 'записи', 'записей')} раньше — ${fmt(sumOf(hid), main)}\n` : '') +
+      sh.map((t) => { const c = catInfo(t.env, state); return `${c.ic} ${t.note || c.name} — ${fmt(t.sum, main)}`; }).join('\n');
+  }
   return out;
 }
 export function catsText(state) {
