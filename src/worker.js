@@ -454,7 +454,10 @@ export function eveningText(state) {
   }
   const by = {};
   list.forEach((t) => { by[t.env] = (by[t.env] || 0) + t.sum; });
-  const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, v]) => { const c = catInfo(id, state); return `${c.ic} ${c.name} — ${fmt(v, main)}`; });
+  const all = Object.entries(by).sort((a, b) => b[1] - a[1]);
+  const shown = all.length > 7 ? all.slice(0, 6) : all, rest = all.slice(shown.length).reduce((a, [, v]) => a + v, 0);
+  const top = shown.map(([id, v]) => { const c = catInfo(id, state); return `${c.ic} ${c.name} — ${fmt(v, main)}`; });
+  if (rest) top.push(`➕ Ещё ${all.length - shown.length} категор${all.length - shown.length < 5 ? 'ии' : 'ий'} — ${fmt(rest, main)}`);
   let text = `🌙 Итог дня: <b>${fmt(sumOf(list), main)}</b>\n${top.join('\n')}`;
   const P = period(state), plan = getCats(state).filter((c) => !c.save).reduce((a, c) => a + (c.amt || 0), 0);
   if (state.mode !== 'simple' && plan) {
@@ -538,7 +541,10 @@ export function weekText(state) {
   if (!w.length) return null;
   const s = sumOf(w), ps = sumOf(pw);
   const by = {}; w.forEach((t) => { by[t.env] = (by[t.env] || 0) + t.sum; });
-  const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, v]) => { const c = catInfo(id, state); return `${c.ic} ${c.name} — ${fmt(v, main)}`; });
+  const all = Object.entries(by).sort((a, b) => b[1] - a[1]);
+  const shown = all.length > 7 ? all.slice(0, 6) : all, rest = all.slice(shown.length).reduce((a, [, v]) => a + v, 0);
+  const top = shown.map(([id, v]) => { const c = catInfo(id, state); return `${c.ic} ${c.name} — ${fmt(v, main)}`; });
+  if (rest) top.push(`➕ Ещё ${all.length - shown.length} категор${all.length - shown.length < 5 ? 'ии' : 'ий'} — ${fmt(rest, main)}`);
   const days = new Set(w.map(txDate)); const noSpend = 7 - days.size;
   const big = w.reduce((a, t) => (t.sum > a.sum ? t : a), w[0]);
   let out = `📊 <b>Неделя в цифрах</b>\n\n💸 Потрачено: <b>${fmt(s, main)}</b>`;
