@@ -37,15 +37,27 @@ if [ -d "$APP/.git" ]; then git -C "$APP" fetch -q origin && git -C "$APP" reset
 id konverty >/dev/null 2>&1 || useradd --system --home "$DATA" --shell /usr/sbin/nologin konverty
 mkdir -p "$DATA" && chown -R konverty:konverty "$DATA" && chmod 700 "$DATA"
 
-if [ ! -s "$ENVF" ]; then
-  say "Секреты (то, что вставляешь, не видно на экране — это нормально, просто нажми Enter)"
-  read -rsp "Токен бота от @BotFather: " BOT_TOKEN; echo
-  read -rp  "Cloudflare Account ID: " CF_ACCOUNT_ID
-  read -rsp "Cloudflare API-токен Workers AI: " CF_AI_TOKEN; echo
-  umask 077
-  printf 'BOT_TOKEN=%s\nCF_ACCOUNT_ID=%s\nCF_AI_TOKEN=%s\nKONVERTY_DATA=%s\n' "$BOT_TOKEN" "$CF_ACCOUNT_ID" "$CF_AI_TOKEN" "$DATA" > "$ENVF"
-  chown root:konverty "$ENVF"; chmod 640 "$ENVF"
+BOT_TOKEN=""; CF_ACCOUNT_ID=""; CF_AI_TOKEN=""
+[ -s "$ENVF" ] && { set -a; . "$ENVF"; set +a; }
+ask() { # ask VAR "вопрос" regex secret
+  local v="${!1:-}"
+  while ! [[ "$v" =~ $3 ]]; do
+    [ -n "$v" ] && echo "  ✗ Не похоже на правильное значение, попробуй ещё раз (правой кнопкой мыши → Enter)"
+    if [ "$4" = 1 ]; then read -rsp "$2: " v; echo; [ -n "$v" ] && echo "  ✓ принято (${#v} символов)"; else read -rp "$2: " v; fi
+    v="$(echo -n "$v" | tr -d '[:space:]')"
+  done
+  printf -v "$1" '%s' "$v"
+}
+if ! [[ "$BOT_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]{30,}$ && "$CF_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ && -n "$CF_AI_TOKEN" ]]; then
+  say "Секреты (вставленное не видно на экране — это нормально, просто нажми Enter)"
 fi
+ask BOT_TOKEN "Токен бота от @BotFather (вида 123456:AA...)" '^[0-9]+:[A-Za-z0-9_-]{30,}$' 1
+ask CF_ACCOUNT_ID "Cloudflare Account ID (32 символа)" '^[0-9a-f]{32}$' 0
+ask CF_AI_TOKEN "Cloudflare API-токен Workers AI (cfut_...)" '^[A-Za-z0-9_-]{30,}$' 1
+umask 077
+printf 'BOT_TOKEN=%s\nCF_ACCOUNT_ID=%s\nCF_AI_TOKEN=%s\nKONVERTY_DATA=%s\n' "$BOT_TOKEN" "$CF_ACCOUNT_ID" "$CF_AI_TOKEN" "$DATA" > "$ENVF"
+chown root:konverty "$ENVF"; chmod 640 "$ENVF"
+umask 022
 
 NODEFLAGS="--disable-warning=ExperimentalWarning"
 node -e 'require("node:sqlite")' 2>/dev/null || NODEFLAGS="$NODEFLAGS --experimental-sqlite"
