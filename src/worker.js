@@ -65,6 +65,7 @@ export class UserStore extends DurableObject {
     const m = await this.ctx.storage.list({ prefix: 'u:' });
     return [...m.entries()].map(([k, v]) => ({ uid: +k.slice(2), ...v }));
   }
+  async dump() { return Object.fromEntries(await this.ctx.storage.list()); }
   async getAdmin() { return (await this.ctx.storage.get('admin')) || null; }
   async regGet(uid) { return (await this.ctx.storage.get('u:' + uid)) || null; }
   async meta(k, v) { if (v === undefined) return (await this.ctx.storage.get('m:' + k)) ?? null; if (v === null) await this.ctx.storage.delete('m:' + k); else await this.ctx.storage.put('m:' + k, v); return v; }
@@ -1687,6 +1688,17 @@ export default {
 
     if (!env.BOT_TOKEN && url.pathname !== '/') {
       return json({ ok: false, error: 'BOT_TOKEN не задан в настройках Worker' }, 500);
+    }
+
+    /* выгрузка всех данных для переезда на сервер в России (ключ знает только сервер с тем же BOT_TOKEN) */
+    if (url.pathname === '/__export') {
+      const key = hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('export:' + env.BOT_TOKEN)));
+      if (request.headers.get('x-export-key') !== key) return json({ ok: false }, 403);
+      const reg = store(env, '__registry__'), registry = await reg.dump(), users = {};
+      const ids = new Set(Object.keys(registry).filter((k) => k.startsWith('u:')).map((k) => k.slice(2)));
+      for (const k of Object.keys(registry)) { const v = registry[k]; if (k.startsWith('u:') && v && v.link) ids.add(String(v.link)); }
+      for (const id of ids) users[id] = await store(env, id).dump();
+      return json({ ok: true, at: Date.now(), registry, users });
     }
 
     // Один раз открыть в браузере: привязывает бота к этому серверу
