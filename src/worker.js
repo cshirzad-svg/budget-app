@@ -1678,6 +1678,7 @@ const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 &
 /* ---------- маршруты ---------- */
 export default {
   async scheduled(event, env, ctx) {
+    if (env.MOVED) return; // бот переехал на сервер в России
     ctx.waitUntil(runSchedule(env));
   },
   async fetch(request, env) {
@@ -1685,6 +1686,12 @@ export default {
     const origin = url.origin;
     if (!env.ORIGIN) env.ORIGIN = origin + '/';
     ORIGIN_FIX = env.ORIGIN;
+
+    /* бот переехал на сервер в России: старый Worker больше ничего не записывает.
+       Telegram получит 503 и повторит обновление позже — уже на новый сервер. */
+    if (env.MOVED && url.pathname !== '/__export' && (url.pathname === '/tg' || url.pathname.startsWith('/api') || request.method !== 'GET')) {
+      return new Response('moved', { status: 503, headers: { 'retry-after': '60' } });
+    }
 
     if (!env.BOT_TOKEN && url.pathname !== '/') {
       return json({ ok: false, error: 'BOT_TOKEN не задан в настройках Worker' }, 500);

@@ -13,6 +13,20 @@ const DATA = process.env.KONVERTY_DATA || '/var/lib/konverty';
 const PORT = +process.env.PORT || 8787;
 fs.mkdirSync(DATA, { recursive: true });
 
+/* повторный перенос данных из Cloudflare: если в git поменялся server/reimport.txt */
+{
+  const flag = path.join(ROOT, 'server', 'reimport.txt'), done = path.join(DATA, 'reimport.applied');
+  const want = fs.existsSync(flag) ? fs.readFileSync(flag, 'utf8').trim() : '';
+  const have = fs.existsSync(done) ? fs.readFileSync(done, 'utf8').trim() : '';
+  if (want && want !== have) {
+    const { execFileSync } = await import('node:child_process');
+    try {
+      execFileSync(process.execPath, [...process.execArgv, path.join(ROOT, 'server', 'import.mjs'), process.env.EXPORT_FROM || 'https://konverty.app'], { stdio: 'inherit', env: process.env, timeout: 120000 });
+      fs.writeFileSync(done, want);
+    } catch (e) { console.error('reimport failed', e.message); }
+  }
+}
+
 /* ---------- хранилище ---------- */
 export const db = new DatabaseSync(path.join(DATA, 'konverty.db'));
 db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; CREATE TABLE IF NOT EXISTS kv (ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, PRIMARY KEY (ns, k)) WITHOUT ROWID;');
@@ -53,6 +67,7 @@ function readVars() {
   return out;
 }
 const env = { ...readVars() };
+delete env.MOVED; // флаг «переехали» относится только к старому Cloudflare Worker
 for (const k of ['BOT_TOKEN', 'CF_ACCOUNT_ID', 'CF_AI_TOKEN', 'ORIGIN', 'PRODAMUS_KEY']) if (process.env[k]) env[k] = process.env[k];
 
 /* Durable Objects: один объект на имя, вызовы к одному объекту идут строго по очереди (как в Cloudflare) */
