@@ -23,7 +23,7 @@ LEGAL_FIO = "Ширзад Самир Салим"
 LEGAL_INN = "222412883999"
 LEGAL_CITY = "г. Барнаул, Алтайский край"
 LEGAL_EMAIL = "shirzad03@bk.ru"
-LEGAL_DATE = "19.10.2026"
+LEGAL_DATE = "25.10.2026"
 MOVED = "1"
 
 [triggers]
