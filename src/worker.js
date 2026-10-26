@@ -997,6 +997,31 @@ export async function readShot(env, bytes) {
   }
   return null;
 }
+/* PDF-выписка банка: текст из PDF (Cloudflare toMarkdown) → операции через ИИ */
+const PDF_PROMPT = 'Ниже текст банковской выписки или чека (PDF). Найди в нём ВСЕ операции списания и поступления. НИЧЕГО НЕ ВЫДУМЫВАЙ. Строки остатков, итогов, «Всего расходов», «Баланс на начало/конец», комиссии за период как итог — НЕ включай. Ответь ТОЛЬКО JSON без пояснений:\n' +
+  '{"type":"list","cur":"RUB","items":[{"d":"дата операции как в тексте, например 14.10.2026","t":"время ЧЧ:ММ или пусто","m":"описание или получатель как в тексте","a":-1250.00,"k":"одно слово из: продукты, кафе, доставка, такси, транспорт, аптека, одежда, быт, связь, развлечения, перевод, другое","n":"коротко по-русски, 1–3 слова: «Пятёрочка», «Такси Яндекс», «Аптека»"}]}\n' +
+  'a — расход со знаком минус, поступление со знаком плюс. Переводы между своими счетами и пополнения — "k":"перевод". cur — валюта выписки (₽ — RUB, ¥ — CNY, $ — USD). Если в тексте нет операций — {"type":"other"}.';
+async function pdfText(env, bytes, name) {
+  if (!env.AI || typeof env.AI.toMarkdown !== 'function') return '';
+  const r = await env.AI.toMarkdown([{ name: name || 'statement.pdf', blob: new Blob([bytes], { type: 'application/pdf' }) }]);
+  const d = Array.isArray(r) ? r[0] : r;
+  return String((d && (d.data || d.markdown)) || '').replace(/\n{3,}/g, '\n\n').trim();
+}
+export async function readPdf(env, bytes, name) {
+  const txt = await pdfText(env, bytes, name);
+  if (txt.replace(/\s/g, '').length < 40) return { type: 'empty' };
+  const lines = txt.split('\n'), chunks = []; let cur = '';
+  for (const l of lines) { if ((cur + l).length > 6000 && cur) { chunks.push(cur); cur = ''; } cur += l + '\n'; }
+  if (cur.trim()) chunks.push(cur);
+  const out = { type: 'other', cur: '', items: [] };
+  for (const ch of chunks.slice(0, 6)) {
+    let j = null;
+    try { j = pickJSON(await aiText(env, [{ role: 'system', content: PDF_PROMPT }, { role: 'user', content: ch }], 3500)); } catch (e) { console.error('pdf ai', e && e.message); }
+    if (j && j.type === 'list' && Array.isArray(j.items)) { out.type = 'list'; out.cur = out.cur || j.cur; out.items.push(...j.items); }
+  }
+  out.cut = chunks.length > 6;
+  return out;
+}
 const MONR = ['янв', 'фев', 'мар', 'апр', 'ма', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 export function shotDate(d, state) {
   const today = todayStr(state), x = String(d || '').toLowerCase().trim();
@@ -1015,14 +1040,14 @@ export function shotDate(d, state) {
   return today;
 }
 const SHOT_K = { 'продукты': 'продукты', 'кафе': 'кафе', 'доставка': 'доставка', 'такси': 'такси', 'транспорт': 'метро', 'аптека': 'аптека', 'одежда': 'одежда', 'быт': 'быт', 'связь': 'связь', 'развлечения': 'кино' };
-export function shotItems(j, state) {
+export function shotItems(j, state, limit = 24) {
   const cur = CURS[String(j.cur || '').toUpperCase()] ? String(j.cur).toUpperCase() : state.cur || 'RUB';
   const cats = getCats(state), spend = cats.filter((c) => !c.save);
   const fallback = (detectEnv('прочее', state)) || (spend[0] || cats[0] || { id: 'other' }).id;
   const tx = state.tx || [], keys = new Set(tx.map((t) => t.imp).filter(Boolean));
   const items = [], seen = new Set();
   let income = 0;
-  for (const it of (Array.isArray(j.items) ? j.items : []).slice(0, 40)) {
+  for (const it of (Array.isArray(j.items) ? j.items : []).slice(0, limit > 24 ? 400 : 40)) {
     const a = +String(it.a ?? '').replace(/\s/g, '').replace(',', '.').replace(/[^\d.+-]/g, '');
     if (!Number.isFinite(a) || a === 0) continue;
     if (a > 0) { income += a; continue; }
@@ -1038,13 +1063,14 @@ export function shotItems(j, state) {
     const dup = keys.has(imp) ? 'imp' : tx.some((t) => txDate(t) === date && (t.cur || state.cur) === cur && Math.abs((t.orig ?? t.sum) - amt) < 0.01) ? 'soft' : '';
     items.push({ date, time, amt, note, env, imp, dup: dup || (d0 ? '' : 'nodate'), on: !dup && !!d0 && k !== 'перевод' });
   }
-  return { cur, items: items.slice(0, 24), income: Math.round(income * 100) / 100 };
+  if (items.length > limit) items.sort((x, y) => (y.date + y.time).localeCompare(x.date + x.time));
+  return { cur, items: items.slice(0, limit), total: items.length, income: Math.round(income * 100) / 100 };
 }
 const money2 = (v, c) => (v % 1 ? fmt(Math.floor(v), c).replace(/(\d)(\D*)$/, `$1,${String(Math.round((v % 1) * 100)).padStart(2, '0')}$2`) : fmt(v, c));
 export function shotView(o, state) {
   const cats = (id) => catInfo(id, state);
   const on = o.items.filter((x) => x.on), total = on.reduce((a, x) => a + x.amt, 0);
-  let t = `📸 <b>Нашёл на скрине ${o.items.length} ${o.items.length === 1 ? 'трату' : o.items.length < 5 ? 'траты' : 'трат'}</b>\n\n`;
+  let t = `${o.src === 'pdf' ? '📄' : '📸'} <b>Нашёл ${o.src === 'pdf' ? 'в выписке' : 'на скрине'} ${o.items.length} ${o.items.length === 1 ? 'трату' : o.items.length < 5 ? 'траты' : 'трат'}</b>${o.total > o.items.length ? ` <i>(последние ${o.items.length} из ${o.total})</i>` : ''}\n\n`;
   t += o.items.map((x, i) => `${x.on ? '✅' : '▫️'} ${i + 1}. ${dateHuman(x.date, state)}${x.time ? ' ' + x.time : ''} · ${esc(x.note)} — <b>${money2(x.amt, o.cur)}</b> ${cats(x.env).ic}${x.dup === 'imp' ? ' <i>(уже записано)</i>' : x.dup === 'soft' ? ' <i>(похоже, уже есть)</i>' : x.dup === 'nodate' ? ' <i>(дата не видна — проверь)</i>' : ''}`).join('\n');
   if (o.income) t += `\n\n➕ Поступления ${fmt(o.income, o.cur)} не записываю.`;
   t += '\n\nНажми на номер, чтобы убрать или вернуть трату.';
@@ -1376,6 +1402,26 @@ async function onUpdate(update, env, origin) {
     const acc = await accessOf(env, st.owner);
     if (!acc.active) { await sendPaywall(env, chat, st.owner, acc); return; }
   }
+  const pdfDoc = msg.document && (/pdf/i.test(msg.document.mime_type || '') || /\.pdf$/i.test(msg.document.file_name || '')) ? msg.document : null;
+  if (pdfDoc) {
+    const state = (await st.getState()) || {};
+    if (!env.AI) { await tg(env, 'sendMessage', { chat_id: chat, text: 'PDF пока не читаю. Пришли скрин истории операций.' }); return; }
+    if (pdfDoc.file_size > 20 * 1024 * 1024) { await tg(env, 'sendMessage', { chat_id: chat, text: '📄 Файл больше 20 МБ, Telegram не даёт его скачать боту. Выгрузи выписку за более короткий период.' }); return; }
+    if (!(await st.aiTick(todayStr(state), AI_MAX))) { await tg(env, 'sendMessage', { chat_id: chat, text: '😴 На сегодня лимит запросов к ИИ закончился. Пришли выписку завтра 🙂' }); return; }
+    await tg(env, 'sendMessage', { chat_id: chat, text: '📄 Читаю выписку, это займёт до минуты…' });
+    let bytes = null, j = null;
+    try { bytes = await fileBytes(env, pdfDoc.file_id); } catch (e) { console.error('file', e); }
+    if (!bytes) { await tg(env, 'sendMessage', { chat_id: chat, text: '😕 Не смог скачать файл, пришли ещё раз.' }); return; }
+    try { j = await readPdf(env, bytes, pdfDoc.file_name); } catch (e) { console.error('pdf', e && e.message); }
+    if (j && j.type === 'empty') { await tg(env, 'sendMessage', { chat_id: chat, text: '😕 В этом PDF нет текста — похоже, это скан или картинка. Пришли скрин истории операций, его я разберу.' }); return; }
+    if (!j || j.type !== 'list') { await tg(env, 'sendMessage', { chat_id: chat, text: '🤔 Не нашёл в файле операций. Пришлёшь выписку из банка (Сбер, Т-Банк и др.) в PDF или скрин истории — разнесу по конвертам.' }); return; }
+    const o = { id: Date.now(), src: 'pdf', ...shotItems(j, state, 30) };
+    if (!o.items.length) { await tg(env, 'sendMessage', { chat_id: chat, text: o.income ? `В выписке только поступления (${fmt(o.income, o.cur)}), трат нет 🙂` : '😕 Не разобрал операции в выписке.' }); return; }
+    await store(env, uid).shotPut(o.id, o);
+    await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', ...shotView(o, state) });
+    if (j.cut || o.total > o.items.length) await tg(env, 'sendMessage', { chat_id: chat, text: '💡 Выписка большая — показал последние операции. Остальное можно загрузить выпиской за более короткий период.' });
+    return;
+  }
   const imgDoc = msg.document && /^image\//.test(msg.document.mime_type || '') ? msg.document : null;
   if ((msg.photo || imgDoc) && !/\d/.test(text)) {
     const state = (await st.getState()) || {};
@@ -1480,7 +1526,7 @@ async function onUpdate(update, env, origin) {
         '<b>Голосом</b> — запиши голосовое 🎤\n' +
         '<b>Напомнить</b> — «напомни в 16:30 оплатить интернет 500»\n' +
         '<b>Чек</b> — просто сфоткай и пришли 🧾\n' +
-        '<b>Выписка</b> — скрин истории операций из Alipay, WeChat, Сбера или Т-Банка 📸 — запишу всё сразу\n' +
+        '<b>Выписка</b> — скрин истории операций из Alipay, WeChat, Сбера или Т-Банка 📸 или PDF-выписка из банка 📄 — запишу всё сразу\n' +
         '<b>Меню</b> — «меню на неделю, китайская кухня», «не люблю грибы», «замени ужин в среду» 👨‍🍳\n' +
         '<b>Вопрос</b> — «на что я больше всего трачу?» 🤖\n\n' +
         'А ещё понимаю слова: <b>сегодня</b>, <b>итоги</b>, <b>неделя</b>, <b>категории</b>, <b>напоминания</b>, <b>платежи</b>, <b>отменить</b>. Или жми кнопки внизу 👇' });

@@ -101,6 +101,14 @@ if (env.CF_ACCOUNT_ID && env.CF_AI_TOKEN) {
       if (!r.ok || j.success === false) throw new Error((j.errors && j.errors.map((e) => e.message).join('; ')) || 'AI HTTP ' + r.status);
       return j.result;
     },
+    async toMarkdown(docs) {
+      const fd = new FormData();
+      for (const d of [].concat(docs)) fd.append('files', d.blob, d.name);
+      const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/tomarkdown`, { method: 'POST', headers: { authorization: 'Bearer ' + env.CF_AI_TOKEN }, body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.success === false) throw new Error((j.errors && j.errors.map((e) => e.message).join('; ')) || 'toMarkdown HTTP ' + r.status);
+      return j.result;
+    },
   };
 } else console.warn('CF_ACCOUNT_ID/CF_AI_TOKEN не заданы — функции ИИ отключены');
 
