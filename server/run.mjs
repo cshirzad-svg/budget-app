@@ -144,13 +144,18 @@ const WORKER_FIRST = new Set(['/', '/index.html', '/offer', '/privacy', '/consen
 /* журнал последних ошибок для диагностики */
 const ERRS = [];
 const _err = console.error.bind(console);
-console.error = (...a) => { ERRS.push(new Date().toISOString() + ' ' + a.map((x) => (x && x.stack) || (typeof x === 'object' ? JSON.stringify(x) : String(x))).join(' ').slice(0, 500)); while (ERRS.length > 40) ERRS.shift(); _err(...a); };
+console.error = (...a) => { ERRS.push(new Date().toISOString() + ' ' + a.map((x) => (x && x.cause ? 'cause=' + (x.cause.code || x.cause.message) + ' ' : '') + ((x && x.stack) || (typeof x === 'object' ? JSON.stringify(x) : String(x)))).join(' ').slice(0, 500)); while (ERRS.length > 40) ERRS.shift(); _err(...a); };
 const { createHash } = await import('node:crypto');
 async function health() {
   const out = { uptime: Math.round(process.uptime()), node: process.version, errors: ERRS.slice(-25) };
   const t0 = Date.now();
-  try { const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`, { signal: AbortSignal.timeout(10000) }); out.tg = { status: r.status, ms: Date.now() - t0, ok: (await r.json()).ok }; }
-  catch (e) { out.tg = { error: String(e && (e.cause && e.cause.code || e.message)), ms: Date.now() - t0 }; }
+  out.tg = [];
+  for (let i = 0; i < 6; i++) {
+    const t = Date.now();
+    try { const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`, { signal: AbortSignal.timeout(10000) }); out.tg.push(r.status + ' ' + (Date.now() - t) + 'ms'); }
+    catch (e) { out.tg.push('ERR ' + String(e && e.cause ? (e.cause.code || e.cause.message) : e.message) + ' ' + (Date.now() - t) + 'ms'); }
+  }
+  try { const r = await fetch('https://konverty-budget.cshirzad.workers.dev/', { signal: AbortSignal.timeout(10000) }); out.wdev = r.status + ' ' + (Date.now() - t0) + 'ms'; } catch (e) { out.wdev = 'ERR ' + String(e && e.cause ? (e.cause.code || e.cause.message) : e.message); }
   const t1 = Date.now();
   try { const r = await fetch('https://api.cloudflare.com/client/v4/', { signal: AbortSignal.timeout(10000) }); out.cf = { status: r.status, ms: Date.now() - t1 }; }
   catch (e) { out.cf = { error: String(e && (e.cause && e.cause.code || e.message)), ms: Date.now() - t1 }; }
