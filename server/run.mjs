@@ -141,6 +141,22 @@ function serveFile(full, req) {
 env.ASSETS = { async fetch(req) { const u = new URL(req.url), f = assetPath(u.pathname); return f ? serveFile(f, req) : new Response('not found', { status: 404 }); } };
 const WORKER_FIRST = new Set(['/', '/index.html', '/offer', '/privacy', '/consent']);
 
+/* журнал последних ошибок для диагностики */
+const ERRS = [];
+const _err = console.error.bind(console);
+console.error = (...a) => { ERRS.push(new Date().toISOString() + ' ' + a.map((x) => (x && x.stack) || (typeof x === 'object' ? JSON.stringify(x) : String(x))).join(' ').slice(0, 500)); while (ERRS.length > 40) ERRS.shift(); _err(...a); };
+const { createHash } = await import('node:crypto');
+async function health() {
+  const out = { uptime: Math.round(process.uptime()), node: process.version, errors: ERRS.slice(-25) };
+  const t0 = Date.now();
+  try { const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`, { signal: AbortSignal.timeout(10000) }); out.tg = { status: r.status, ms: Date.now() - t0, ok: (await r.json()).ok }; }
+  catch (e) { out.tg = { error: String(e && (e.cause && e.cause.code || e.message)), ms: Date.now() - t0 }; }
+  const t1 = Date.now();
+  try { const r = await fetch('https://api.cloudflare.com/client/v4/', { signal: AbortSignal.timeout(10000) }); out.cf = { status: r.status, ms: Date.now() - t1 }; }
+  catch (e) { out.cf = { error: String(e && (e.cause && e.cause.code || e.message)), ms: Date.now() - t1 }; }
+  return out;
+}
+
 /* ---------- HTTP ---------- */
 const ctx = { waitUntil: (p) => Promise.resolve(p).catch((e) => console.error('waitUntil', e)), passThroughOnException() {} };
 const server = http.createServer(async (req, res) => {
@@ -153,6 +169,11 @@ const server = http.createServer(async (req, res) => {
     const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (v != null) headers.set(k, Array.isArray(v) ? v.join(', ') : v);
     const request = new Request(url, { method: req.method, headers, body });
     let resp;
+    if (url.pathname === '/__health') {
+      const key = createHash('sha256').update('health:' + (env.BOT_TOKEN || '')).digest('hex');
+      resp = url.searchParams.get('key') === key ? new Response(JSON.stringify(await health(), null, 1), { headers: { 'content-type': 'application/json' } }) : new Response('forbidden', { status: 403 });
+      const o = {}; resp.headers.forEach((v, k) => { o[k] = v; }); res.writeHead(resp.status, o); res.end(await resp.text()); return;
+    }
     const file = req.method === 'GET' && !WORKER_FIRST.has(url.pathname) ? assetPath(url.pathname) : null;
     if (file) resp = serveFile(file, request);
     else resp = await worker.fetch(request, env, ctx);
