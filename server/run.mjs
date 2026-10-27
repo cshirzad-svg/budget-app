@@ -67,7 +67,8 @@ function readVars() {
   return out;
 }
 const env = { ...readVars() };
-delete env.MOVED; // флаг «переехали» относится только к старому Cloudflare Worker
+delete env.MOVED;
+env.TG_API = process.env.TG_API || 'https://konverty-budget.cshirzad.workers.dev/tgrelay'; // из России api.telegram.org доступен нестабильно // флаг «переехали» относится только к старому Cloudflare Worker
 for (const k of ['BOT_TOKEN', 'CF_ACCOUNT_ID', 'CF_AI_TOKEN', 'ORIGIN', 'PRODAMUS_KEY']) if (process.env[k]) env[k] = process.env[k];
 
 /* Durable Objects: один объект на имя, вызовы к одному объекту идут строго по очереди (как в Cloudflare) */
@@ -154,6 +155,12 @@ async function health() {
     const t = Date.now();
     try { const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`, { signal: AbortSignal.timeout(10000) }); out.tg.push(r.status + ' ' + (Date.now() - t) + 'ms'); }
     catch (e) { out.tg.push('ERR ' + String(e && e.cause ? (e.cause.code || e.cause.message) : e.message) + ' ' + (Date.now() - t) + 'ms'); }
+  }
+  out.relay = [];
+  for (let i = 0; i < 4; i++) {
+    const t = Date.now();
+    try { const r = await fetch(`${env.TG_API}/bot${env.BOT_TOKEN}/getMe`, { signal: AbortSignal.timeout(15000) }); out.relay.push(r.status + ' ' + (Date.now() - t) + 'ms'); }
+    catch (e) { out.relay.push('ERR ' + String(e && e.cause ? (e.cause.code || e.cause.message) : e.message) + ' ' + (Date.now() - t) + 'ms'); }
   }
   try { const r = await fetch('https://konverty-budget.cshirzad.workers.dev/', { signal: AbortSignal.timeout(10000) }); out.wdev = r.status + ' ' + (Date.now() - t0) + 'ms'; } catch (e) { out.wdev = 'ERR ' + String(e && e.cause ? (e.cause.code || e.cause.message) : e.message); }
   const t1 = Date.now();

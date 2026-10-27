@@ -698,16 +698,22 @@ export function buildCsv(state) {
 }
 
 /* ---------- Telegram ---------- */
+/* адрес Telegram Bot API: на сервере в России — через ретранслятор (прямой доступ к api.telegram.org там нестабилен) */
+const tgApi = (env) => (env.TG_API || 'https://api.telegram.org').replace(/\/$/, '');
 async function tg(env, method, body) {
-  try {
-    const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-    });
-    return await r.json();
-  } catch (e) {
-    console.error('tg', method, e);
-    return { ok: false };
+  let last;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const r = await fetch(`${tgApi(env)}/bot${env.BOT_TOKEN}/${method}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000),
+      });
+      const j = await r.json();
+      if (r.status >= 500 && i < 2) { last = j; continue; }
+      return j;
+    } catch (e) { last = e; if (i < 2) await new Promise((ok) => setTimeout(ok, 700 * (i + 1))); }
   }
+  console.error('tg', method, last);
+  return { ok: false };
 }
 let ORIGIN_FIX = null;
 const appButton = (origin) => ({ inline_keyboard: [[{ text: '📊 Открыть бюджет', web_app: { url: (ORIGIN_FIX || origin + '/') } }]] });
@@ -965,7 +971,7 @@ export async function advise(env, state, question) {
 async function fileBytes(env, fileId) {
   const f = await tg(env, 'getFile', { file_id: fileId });
   if (!f.ok) return null;
-  return new Uint8Array(await (await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${f.result.file_path}`)).arrayBuffer());
+  return new Uint8Array(await (await fetch(`${tgApi(env)}/file/bot${env.BOT_TOKEN}/${f.result.file_path}`)).arrayBuffer());
 }
 export async function readReceipt(env, bytes) {
   const prompt = 'Это фото кассового чека. Найди ИТОГОВУЮ сумму покупки. Ответь ТОЛЬКО JSON: {"total":число,"cur":"RUB|CNY|USD|EUR|KZT|GEL|THB|TRY|AED","store":"название магазина или пусто","date":"YYYY-MM-DD или null","kind":"продукты|кафе|аптека|одежда|транспорт|быт|другое"}. Если это не чек — {"total":null}.';
@@ -1168,7 +1174,7 @@ async function transcribe(env, fileId) {
   try {
     const f = await tg(env, 'getFile', { file_id: fileId });
     if (!f.ok) return null;
-    const buf = await (await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${f.result.file_path}`)).arrayBuffer();
+    const buf = await (await fetch(`${tgApi(env)}/file/bot${env.BOT_TOKEN}/${f.result.file_path}`)).arrayBuffer();
     if (buf.byteLength > 6e6) return null;
     let b64 = ''; const u8 = new Uint8Array(buf);
     for (let i = 0; i < u8.length; i += 0x8000) b64 += String.fromCharCode(...u8.subarray(i, i + 0x8000));
@@ -1733,6 +1739,15 @@ export default {
     if (!env.ORIGIN) env.ORIGIN = origin + '/';
     ORIGIN_FIX = env.ORIGIN;
 
+    /* ретранслятор Telegram Bot API для сервера в России: пропускает только запросы с токеном этого бота */
+    if (url.pathname.startsWith('/tgrelay/') && env.BOT_TOKEN) {
+      const rest = url.pathname.slice('/tgrelay/'.length);
+      if (!rest.startsWith('bot' + env.BOT_TOKEN + '/') && !rest.startsWith('file/bot' + env.BOT_TOKEN + '/')) return new Response('forbidden', { status: 403 });
+      const h = new Headers(); const ct = request.headers.get('content-type'); if (ct) h.set('content-type', ct);
+      const r = await fetch('https://api.telegram.org/' + rest + url.search, { method: request.method, headers: h, body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body });
+      return new Response(r.body, { status: r.status, headers: { 'content-type': r.headers.get('content-type') || 'application/json' } });
+    }
+
     /* бот переехал на сервер в России: старый Worker больше ничего не записывает.
        Telegram получит 503 и повторит обновление позже — уже на новый сервер. */
     if (env.MOVED && url.pathname !== '/__export' && (url.pathname === '/tg' || url.pathname.startsWith('/api') || request.method !== 'GET')) {
@@ -1880,7 +1895,7 @@ export default {
         fd.append('chat_id', String(user.id));
         fd.append('caption', '📸 Твои итоги. Перешли друзьям или выложи в сторис 🙂');
         fd.append('photo', new Blob([bin], { type: 'image/png' }), 'itogi.png');
-        const r3 = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendPhoto`, { method: 'POST', body: fd });
+        const r3 = await fetch(`${tgApi(env)}/bot${env.BOT_TOKEN}/sendPhoto`, { method: 'POST', body: fd });
         const j3 = await r3.json().catch(() => ({}));
         return json({ ok: !!j3.ok });
       }
@@ -1895,7 +1910,7 @@ export default {
       fd.append('chat_id', String(user.id));
       fd.append('caption', `📤 Все твои траты (${(state.tx || []).length} шт.). Открывается в Excel и Google Таблицах.`);
       fd.append('document', new Blob([buildCsv(state)], { type: 'text/csv' }), `budget-${todayStr(state)}.csv`);
-      const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendDocument`, { method: 'POST', body: fd });
+      const r = await fetch(`${tgApi(env)}/bot${env.BOT_TOKEN}/sendDocument`, { method: 'POST', body: fd });
       const j = await r.json().catch(() => ({}));
       return json({ ok: !!j.ok }, j.ok ? 200 : 502);
     }
