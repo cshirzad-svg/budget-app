@@ -40,6 +40,12 @@ const DM_ONCE = [
   { key: 'dm:zig-subs', uid: 533704623, text: 'Марсель, спасибо за отзыв, очень дельно! 🙌\n\nУже сделал, как вы предложили:\n\n🔒 Регулярные платежи теперь сразу резервируются в своём конверте. Пока платёж не оплачен, эти деньги не считаются свободными.\n📉 Лимит конверта нельзя сделать меньше суммы его платежей.\n✏️ Сумму и день платежа можно изменить: нажмите на платёж в «Конверты» → «Регулярные платежи». А в напоминании от бота появилась кнопка «Сумма другая»: пишете, сколько заплатили, и сумма обновится на следующие месяцы.\n\nЕсли что-то ещё мешает, пишите, читаю всё 🙂' },
 ];
 
+/* разовая рассылка всем пользователям (из крона, один раз на ключ) */
+const BROADCAST_ONCE = {
+  key: 'bc:outage-2710',
+  text: 'Привет! 🙏 Сегодня бот какое-то время не отвечал: у сервера были проблемы со связью. Уже всё починили, работает как обычно.\n\nЕсли писал траты, пока бот молчал, загляни в «Мой бюджет» и проверь, всё ли записалось. Если чего-то нет, просто отправь ещё раз.\n\nИзвини за неудобства!',
+};
+
 /* ---------- рассылка ---------- */
 const BC_VER = 'news-2b';
 const BC_TEXT = (gift) => 'Привет! 👋 Небольшая новость от бота «Бюджет в конвертах».\n\n' +
@@ -590,6 +596,20 @@ async function runSchedule(env) {
       if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: r.ok ? `🎁 @${nick}: выдан бесплатный доступ, сообщение отправлено.` : `🎁 @${nick}: доступ выдан, но сообщение не дошло (${r.description || r.error_code}).` });
     }
   } catch (e) { console.error('gift', e); }
+  try {
+    if (BROADCAST_ONCE && !(await reg.meta(BROADCAST_ONCE.key))) {
+      await reg.meta(BROADCAST_ONCE.key, Date.now());
+      let ok = 0, fail = 0;
+      for (const u of await reg.regList()) {
+        if (!u || !u.uid || String(u.uid) === '1') continue;
+        const r = await tg(env, 'sendMessage', { chat_id: u.uid, text: BROADCAST_ONCE.text });
+        if (r.ok) ok++; else fail++;
+        await new Promise((res) => setTimeout(res, 60));
+      }
+      const adm = await reg.getAdmin();
+      if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `📣 Рассылка «извините за сбой»: доставлено ${ok}, не дошло ${fail} (заблокировали бота или удалили чат).` });
+    }
+  } catch (e) { console.error('broadcast', e); }
   try {
     for (const d of DM_ONCE) {
       if (await reg.meta(d.key)) continue;
