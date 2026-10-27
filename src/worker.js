@@ -63,6 +63,7 @@ export class UserStore extends DurableObject {
   async regUpdate(uid, patch) {
     const k = 'u:' + uid;
     const v = { first: Date.now(), ...((await this.ctx.storage.get(k)) || {}), ...patch };
+    if (patch.seen && v.blocked) delete v.blocked; // снова пишет боту — значит, не заблокировал
     if (!v.paid && v.user && FREE_USERS.includes(String(v.user).toLowerCase())) Object.assign(v, { paid: true, paidAt: Date.now(), gift: true });
     await this.ctx.storage.put(k, v);
     return v;
@@ -597,13 +598,27 @@ async function runSchedule(env) {
     }
   } catch (e) { console.error('gift', e); }
   try {
+    if (!(await reg.meta('blockcheck:1'))) {
+      await reg.meta('blockcheck:1', Date.now());
+      const bad = [];
+      for (const u of await reg.regList()) {
+        if (!u || !u.uid || String(u.uid) === '1') continue;
+        const r = await tg(env, 'sendChatAction', { chat_id: u.uid, action: 'typing' });
+        if (!r.ok) { bad.push(`• ${u.name || u.uid}${u.user ? ' @' + u.user : ''} · id ${u.uid} — ${r.description || 'ошибка'}`); await reg.regUpdate(u.uid, { blocked: Date.now() }); }
+        await new Promise((res) => setTimeout(res, 60));
+      }
+      const adm = await reg.getAdmin();
+      if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: bad.length ? '🚫 Кому бот не может писать:\n' + bad.join('\n') : '✅ Все пользователи получают сообщения бота.' });
+    }
+  } catch (e) { console.error('blockcheck', e); }
+  try {
     if (BROADCAST_ONCE && !(await reg.meta(BROADCAST_ONCE.key))) {
       await reg.meta(BROADCAST_ONCE.key, Date.now());
       let ok = 0, fail = 0;
       for (const u of await reg.regList()) {
         if (!u || !u.uid || String(u.uid) === '1') continue;
         const r = await tg(env, 'sendMessage', { chat_id: u.uid, text: BROADCAST_ONCE.text });
-        if (r.ok) ok++; else fail++;
+        if (r.ok) ok++; else { fail++; await reg.regUpdate(u.uid, { blocked: Date.now() }); }
         await new Promise((res) => setTimeout(res, 60));
       }
       const adm = await reg.getAdmin();
@@ -1612,7 +1627,7 @@ async function onUpdate(update, env, origin) {
     const c = (f) => list.filter(f).length;
     await tg(env, 'sendMessage', { chat_id: chat, parse_mode: 'HTML', text:
       `📊 <b>Статистика</b>\n\n👥 Всего зашли: ${list.length}\n🧭 Прошли настройку: ${c((u) => u.onb)}\n✍️ Записали хотя бы 1 трату: ${c((u) => u.n > 0)}\n🔥 Активны за сутки: ${c((u) => u.seen > day)}\n📅 Активны за неделю: ${c((u) => u.seen > wk)}\n🔔 С напоминаниями: ${c((u) => u.notif && (u.notif.m || u.notif.e))}\n💎 Оплатили: ${c((u) => u.paid && !u.gift)}\n👫 В общих бюджетах: ${c((u) => u.link)}\n${(() => { const m = {}; list.forEach((u) => { if (u.src) m[u.src] = (m[u.src] || 0) + 1; }); const k = Object.keys(m); return k.length ? '🔗 Источники: ' + k.map((x) => `${x} — ${m[x]}`).join(', ') + '\n' : ''; })()}\n` +
-      list.sort((a, b) => (b.seen || 0) - (a.seen || 0)).slice(0, 15).map((u) => `• ${u.name || u.uid}${u.user ? ' @' + u.user : ''} — ${u.n || 0} записей${u.paid ? ' 💎' : ''} · id ${u.uid}`).join('\n') });
+      list.sort((a, b) => (b.seen || 0) - (a.seen || 0)).slice(0, 15).map((u) => `• ${u.name || u.uid}${u.user ? ' @' + u.user : ''} — ${u.n || 0} записей${u.paid ? ' 💎' : ''}${u.blocked ? ' 🚫' : ''} · id ${u.uid}`).join('\n') });
     return;
   }
   if (text.startsWith('/undo')) {
