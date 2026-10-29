@@ -642,6 +642,7 @@ async function runSchedule(env) {
     }
   } catch (e) { console.error('whv', e); }
   const users = await reg.regList();
+  const admin0 = await reg.getAdmin();
   const now = Date.now();
   let rates = null;
   for (const u of users) {
@@ -659,6 +660,18 @@ async function runSchedule(env) {
         }
         await reg.regUpdate(u.uid, { remNext: next });
       } catch (e) { console.error('rem', u.uid, e); }
+    }
+    /* дожимы пробного периода: 2-й день, последний день, после окончания (только когда оплата подключена) */
+    if (payOn(env) && !u.paid && !u.blocked && !u.link && u.trialEnd && admin0 !== u.uid && mins >= 12 * 60 && mins < 22 * 60) {
+      try {
+        const start = u.trialEnd - TRIAL_DAYS * 864e5, el = now - start;
+        const stage = now >= u.trialEnd ? 3 : el >= 2 * 864e5 ? 2 : el >= 864e5 ? 1 : 0;
+        const done = u.nudge || 0;
+        if (stage > done) {
+          const r = await tg(env, 'sendMessage', { chat_id: u.uid, ...trialNudge(env, stage, u), reply_markup: await payButtons(env, u.uid) });
+          await reg.regUpdate(u.uid, { nudge: stage, ...(r.ok ? {} : { blocked: Date.now() }) });
+        }
+      } catch (e) { console.error('nudge', u.uid, e); }
     }
     /* регулярные платежи */
     if (Array.isArray(u.subs) && u.subs.length && mins >= 10 * 60) {
@@ -1180,6 +1193,12 @@ const priceStars = (env) => Math.max(1, parseInt(env.PRICE_STARS || '600', 10) |
 const invoiceBody = (env, owner) => ({ title: 'Бюджет в конвертах — навсегда', description: 'Полный доступ к боту и приложению без ограничений: траты, конверты, ИИ-повар, напоминания, общий бюджет на двоих.', payload: 'full:' + owner, currency: 'XTR', prices: [{ label: 'Полный доступ', amount: priceStars(env) }], provider_token: '' });
 async function sendPaywall(env, chat, owner, acc) {
   await tg(env, 'sendMessage', { chat_id: chat, text: `🔒 Пробный период закончился${acc && acc.trialEnd ? ' ' + new Date(acc.trialEnd).toLocaleDateString('ru-RU') : ''}.\n\nВсе твои записи сохранены. Чтобы продолжить вести бюджет, открой полный доступ навсегда — один раз, без подписки, ${priceRub(env)} ₽ 👇`, reply_markup: await payButtons(env, owner) });
+}
+function trialNudge(env, stage, u) {
+  const P = priceRub(env), n = u.n || 0;
+  if (stage === 1) return { text: `👋 Второй день с ботом${n ? `, у тебя уже ${n} ${n % 10 === 1 && n % 100 !== 11 ? 'запись' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'записи' : 'записей'}` : ''}.\n\nЧто ещё есть в полной версии:\n👨‍🍳 ИИ-повар: меню на неделю под твой бюджет и список покупок\n📸 Скрин из банка или PDF-выписка — бот сам разнесёт траты\n👫 Общий бюджет на двоих\n🔁 Регулярные платежи с резервом в конверте\n\nПолный доступ навсегда — ${P} ₽, один раз, без подписки.` };
+  if (stage === 2) return { text: `⏳ Завтра заканчивается пробный период.\n\nВсе записи сохранятся. Чтобы бот продолжил считать бюджет, напоминать о платежах и раскладывать траты по конвертам, открой полный доступ: ${P} ₽ навсегда, это меньше, чем одна доставка еды в неделю.\n\nПередумаешь в течение 14 дней — вернём деньги.` };
+  return { text: `🔒 Пробный период закончился.\n\nТвои ${n ? n + ' ' : ''}записи, конверты и цели на месте — ничего не пропало. Открой полный доступ, и продолжим с того же места: ${P} ₽ один раз, навсегда.\n\nЕсли что-то не понравилось, напиши «поддержка» — правда хочу знать.` };
 }
 async function chefLocked(env, chat, owner) {
   const head = '👨‍🍳 ИИ-повар есть только в полной версии: меню на неделю под твой бюджет, список покупок и цена корзины.\n\nВсё остальное в пробном периоде работает.';
