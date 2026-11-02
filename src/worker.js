@@ -1936,7 +1936,9 @@ export default {
         return json({ ok: true, ...(await makeInvite(env, user.id)) });
       }
       if (b.act === 'remove' && st.owner === user.id) {
-        const pid = +b.id; await unlinkPartner(env, user.id, pid);
+        const pid = +b.id;
+        if (!(await store(env, user.id).getMembers()).some((m) => m.id === pid)) return json({ ok: false, error: 'not_member' }, 400);
+        await unlinkPartner(env, user.id, pid);
         await tg(env, 'sendMessage', { chat_id: pid, text: '👋 Тебя убрали из общего бюджета. Теперь у тебя снова свой личный бюджет.' });
         return json({ ok: true });
       }
