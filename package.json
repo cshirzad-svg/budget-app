@@ -1,0 +1,8 @@
+{
+  "name": "konverty-budget",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --disable-warning=ExperimentalWarning --import ./tests/loader.mjs --test tests/finance.test.mjs"
+  }
+}
