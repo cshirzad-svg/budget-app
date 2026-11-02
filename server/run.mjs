@@ -176,7 +176,9 @@ const server = http.createServer(async (req, res) => {
     const host = req.headers['x-forwarded-host'] || req.headers.host || 'konverty.app';
     const proto = req.headers['x-forwarded-proto'] || 'https';
     const url = new URL(req.url, `${proto}://${host}`);
-    const chunks = []; for await (const c of req) chunks.push(c);
+    if (+req.headers['content-length'] > 5e6) { res.writeHead(413); res.end('too large'); return; }
+    const chunks = []; let size = 0;
+    for await (const c of req) { size += c.length; if (size > 5e6) { res.writeHead(413); res.end('too large'); req.destroy(); return; } chunks.push(c); }
     const body = chunks.length && !['GET', 'HEAD'].includes(req.method) ? Buffer.concat(chunks) : undefined;
     const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (v != null) headers.set(k, Array.isArray(v) ? v.join(', ') : v);
     const request = new Request(url, { method: req.method, headers, body });
@@ -212,14 +214,15 @@ if (process.env.KONVERTY_NO_CRON !== '1') {
   setTimeout(() => { tick(); setInterval(tick, ms); }, ms - (Date.now() % ms) + 2000);
 }
 
-/* ежедневная копия базы, хранится 7 дней */
+/* копия базы каждые 6 часов, хранится 7 дней (28 копий) + зашифрованная копия админу в Telegram */
 function backup() {
   try {
     const dir = path.join(DATA, 'backups'); fs.mkdirSync(dir, { recursive: true });
-    const f = path.join(dir, 'konverty-' + new Date().toISOString().slice(0, 10) + '.db');
+    const now = new Date(), slot = String(Math.floor(now.getUTCHours() / 6) * 6).padStart(2, '0');
+    const f = path.join(dir, 'konverty-' + now.toISOString().slice(0, 10) + '-' + slot + 'h.db');
     if (!fs.existsSync(f)) db.exec(`VACUUM INTO '${f.replace(/'/g, "''")}'`);
     if (!fs.existsSync(f + '.sent')) offsite(f).then((ok) => ok && fs.writeFileSync(f + '.sent', ''));
-    for (const x of fs.readdirSync(dir).filter((n) => n.endsWith('.db')).sort().slice(0, -7)) { fs.rmSync(path.join(dir, x)); fs.rmSync(path.join(dir, x + '.sent'), { force: true }); }
+    for (const x of fs.readdirSync(dir).filter((n) => n.endsWith('.db')).sort().slice(0, -28)) { fs.rmSync(path.join(dir, x)); fs.rmSync(path.join(dir, x + '.sent'), { force: true }); }
   } catch (e) { console.error('backup', e); }
 }
 
@@ -237,13 +240,13 @@ async function offsite(file) {
     const blob = Buffer.concat([Buffer.from('KNV1'), iv, c.getAuthTag(), body]);
     const fd = new FormData();
     fd.append('chat_id', String(admin));
-    fd.append('caption', '🗄 Резервная копия базы ' + path.basename(file, '.db').slice(9) + ' (зашифрована, хранить не обязательно — просто не удаляй чат)');
+    fd.append('caption', '🗄 Резервная копия базы ' + path.basename(file, '.db').slice(9).replace(/-(\d\d)h$/, ' $1:00 UTC') + ' (зашифрована, хранить не обязательно — просто не удаляй чат)');
     fd.append('disable_notification', 'true');
     fd.append('document', new Blob([blob]), path.basename(file) + '.enc');
     for (let i = 0; i < 3; i++) {
       try {
         const r = await fetch(`${env.TG_API}/bot${env.BOT_TOKEN}/sendDocument`, { method: 'POST', body: fd, signal: AbortSignal.timeout(60000) });
-        if (r.ok) return true;
+        if (r.ok && (await r.json()).ok) return true;
         console.error('offsite', r.status, (await r.text()).slice(0, 200));
       } catch (e) { console.error('offsite', e.message); }
       await new Promise((ok) => setTimeout(ok, 20000));

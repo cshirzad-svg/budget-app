@@ -13,4 +13,7 @@ const d = crypto.createDecipheriv('aes-256-gcm', key, b.subarray(4, 16));
 d.setAuthTag(b.subarray(16, 32));
 const out = file.replace(/\.enc$/, '') || file + '.db';
 fs.writeFileSync(out, zlib.gunzipSync(Buffer.concat([d.update(b.subarray(32)), d.final()])));
-console.log('Готово:', out, '— положи его как /var/lib/konverty/konverty.db (сервис остановить перед заменой)');
+const { DatabaseSync } = await import("node:sqlite");
+const chk = new DatabaseSync(out, { readOnly: true }).prepare("PRAGMA integrity_check").get();
+console.log("Проверка базы:", Object.values(chk)[0]);
+console.log('Готово:', out, '— чтобы восстановить: systemctl stop konverty; сохрани текущую базу; удали konverty.db-wal и konverty.db-shm; положи файл как /var/lib/konverty/konverty.db (владелец konverty); systemctl start konverty');

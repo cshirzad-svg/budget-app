@@ -246,6 +246,7 @@ export async function getRates() {
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 const store = (env, uid) => env.USERS.get(env.USERS.idFromName(String(uid)));
 
+const sha256hex = async (s) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
 async function webhookSecret(token) {
   return hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('wh:' + token))).slice(0, 48);
 }
@@ -264,6 +265,8 @@ export async function checkInitData(initData, token) {
   const k2 = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const sig = hex(await crypto.subtle.sign('HMAC', k2, enc.encode(dcs)));
   if (sig !== hash) return null;
+  const ad = +p.get('auth_date');
+  if (!ad || Date.now() / 1000 - ad > 86400 || ad - Date.now() / 1000 > 300) return null; // старые/поддельные по времени данные не принимаем
   try { return JSON.parse(p.get('user') || 'null'); } catch { return null; }
 }
 
@@ -678,11 +681,12 @@ async function runSchedule(env) {
       const ym = today.slice(0, 7), dim = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 0)).getUTCDate();
       const sent = u.subSent || {};
       const dueSubs = u.subs.filter((x) => x && x.on !== false && Math.min(+x.day || 1, dim) === local.getUTCDate() && sent[x.id] !== ym);
-      for (const x of dueSubs) {
+      try { for (const x of dueSubs) {
         await tg(env, 'sendMessage', { chat_id: u.uid, text: `🔁 Сегодня платёж: ${x.ic || '💳'} ${x.name} — ${fmt(x.sum, x.cur || 'RUB')}`, reply_markup: { inline_keyboard: [[{ text: '✅ Оплатил — записать', callback_data: 's:pay:' + x.id }], [{ text: '✏️ Сумма другая', callback_data: 's:ed:' + x.id }, { text: '⏭ Не в этот раз', callback_data: 's:skip:' + x.id }]] } });
         sent[x.id] = ym;
       }
       if (dueSubs.length) await reg.regUpdate(u.uid, { subSent: sent });
+      } catch (e) { console.error('subs', u.uid, e); }
     }
     const n = u.notif;
     if (!n) continue;
@@ -756,6 +760,7 @@ async function tg(env, method, body) {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000),
       });
       const j = await r.json();
+      if (r.status === 429 && i < 2) { last = j; const w = Math.min(30, +(j.parameters && j.parameters.retry_after) || 2); await new Promise((ok) => setTimeout(ok, w * 1000)); continue; }
       if (r.status >= 500 && i < 2) { last = j; continue; }
       return j;
     } catch (e) { last = e; if (i < 2) await new Promise((ok) => setTimeout(ok, 700 * (i + 1))); }
@@ -1826,12 +1831,12 @@ export default {
 
     // Один раз открыть в браузере: привязывает бота к этому серверу
     if (url.pathname === '/setup') {
+      if (url.searchParams.get('key') !== (await sha256hex('setup:' + env.BOT_TOKEN))) return new Response('not found', { status: 404 });
       const base = (env.ORIGIN || origin + '/').replace(/\/$/, '');
       const r = await tg(env, 'setWebhook', {
         url: base + '/tg',
         secret_token: await webhookSecret(env.BOT_TOKEN),
         allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
-        drop_pending_updates: true,
       });
       await tg(env, 'setChatMenuButton', {
         menu_button: { type: 'web_app', text: 'Мой бюджет', web_app: { url: base + '/' } },
@@ -1988,6 +1993,7 @@ export default {
       if (request.method === 'PUT') {
         const body = await request.json();
         if (!body || typeof body.state !== 'object') return json({ ok: false }, 400);
+        if (!(await accessOf(env, st.owner)).active) return json({ ok: false, error: 'trial_over', access: await info() }, 402);
         const s = await st.putState(body.state, Array.isArray(body.deleted) ? body.deleted : []);
         await reg.regUpdate(user.id, { seen: Date.now(), tz: s.tz, notif: s.notif, subs: st.owner === user.id ? (s.subs || []).slice(0, 50) : [], start: s.start || 1, onb: !!s.onboarded, n: (s.tx || []).length, name: user.first_name || '', user: user.username || '' });
         return json({ ok: true, state: s });
