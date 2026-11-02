@@ -218,8 +218,38 @@ function backup() {
     const dir = path.join(DATA, 'backups'); fs.mkdirSync(dir, { recursive: true });
     const f = path.join(dir, 'konverty-' + new Date().toISOString().slice(0, 10) + '.db');
     if (!fs.existsSync(f)) db.exec(`VACUUM INTO '${f.replace(/'/g, "''")}'`);
-    for (const x of fs.readdirSync(dir).sort().slice(0, -7)) fs.rmSync(path.join(dir, x));
+    if (!fs.existsSync(f + '.sent')) offsite(f).then((ok) => ok && fs.writeFileSync(f + '.sent', ''));
+    for (const x of fs.readdirSync(dir).filter((n) => n.endsWith('.db')).sort().slice(0, -7)) { fs.rmSync(path.join(dir, x)); fs.rmSync(path.join(dir, x + '.sent'), { force: true }); }
   } catch (e) { console.error('backup', e); }
+}
+
+/* копия вне сервера: раз в день зашифрованный файл базы уходит админу в Telegram.
+   Ключ = sha256('backup:' + BOT_TOKEN) — расшифровать: node server/restore-backup.mjs <файл.enc> (нужен BOT_TOKEN) */
+async function offsite(file) {
+  try {
+    const row = db.prepare("SELECT v FROM kv WHERE ns = '__registry__' AND k = 'admin'").get();
+    const admin = row && JSON.parse(row.v);
+    if (!admin || !env.BOT_TOKEN) return false;
+    const crypto = await import('node:crypto'), zlib = await import('node:zlib');
+    const key = crypto.createHash('sha256').update('backup:' + env.BOT_TOKEN).digest();
+    const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const body = Buffer.concat([c.update(zlib.gzipSync(fs.readFileSync(file))), c.final()]);
+    const blob = Buffer.concat([Buffer.from('KNV1'), iv, c.getAuthTag(), body]);
+    const fd = new FormData();
+    fd.append('chat_id', String(admin));
+    fd.append('caption', '🗄 Резервная копия базы ' + path.basename(file, '.db').slice(9) + ' (зашифрована, хранить не обязательно — просто не удаляй чат)');
+    fd.append('disable_notification', 'true');
+    fd.append('document', new Blob([blob]), path.basename(file) + '.enc');
+    for (let i = 0; i < 3; i++) {
+      try {
+        const r = await fetch(`${env.TG_API}/bot${env.BOT_TOKEN}/sendDocument`, { method: 'POST', body: fd, signal: AbortSignal.timeout(60000) });
+        if (r.ok) return true;
+        console.error('offsite', r.status, (await r.text()).slice(0, 200));
+      } catch (e) { console.error('offsite', e.message); }
+      await new Promise((ok) => setTimeout(ok, 20000));
+    }
+  } catch (e) { console.error('offsite', e); }
+  return false;
 }
 setTimeout(backup, 60000); setInterval(backup, 6 * 3600 * 1000);
 
