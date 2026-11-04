@@ -69,6 +69,7 @@ function readVars() {
 const env = { ...readVars() };
 delete env.MOVED;
 env.TG_API = process.env.TG_API || 'https://konverty-budget.cshirzad.workers.dev/tgrelay'; // из России api.telegram.org доступен нестабильно // флаг «переехали» относится только к старому Cloudflare Worker
+env.FAST_ACK = '1'; // процесс живёт постоянно — фоновую обработку не обрывают
 for (const k of ['BOT_TOKEN', 'CF_ACCOUNT_ID', 'CF_AI_TOKEN', 'ORIGIN', 'PRODAMUS_KEY']) if (process.env[k]) env[k] = process.env[k];
 
 /* Durable Objects: один объект на имя, вызовы к одному объекту идут строго по очереди (как в Cloudflare) */

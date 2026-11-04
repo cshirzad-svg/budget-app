@@ -1882,7 +1882,10 @@ export default {
         return new Response('forbidden', { status: 403 });
       }
       const update = await request.json();
-      try { await onUpdate(update, env, origin); } catch (e) { console.error(e); }
+      // на сервере отвечаем Telegram сразу, а обрабатываем в фоне: медленный ответ Telegram API
+      // не задерживает вебхук, и Telegram не включает паузы между повторами (иначе бот отвечает через 10–20 минут)
+      const job = onUpdate(update, env, origin).catch((e) => console.error(e));
+      if (!env.FAST_ACK) await job;
       return new Response('ok');
     }
 
