@@ -65,7 +65,7 @@ node -e 'require("node:sqlite")' 2>/dev/null || NODEFLAGS="$NODEFLAGS --experime
 say "Переношу данные из Cloudflare"
 if [ ! -s "$DATA/konverty.db" ] || [ "${REIMPORT:-0}" = 1 ]; then
   systemctl stop konverty 2>/dev/null || true
-  sudo -u konverty bash -c "set -a; . $ENVF; set +a; node $NODEFLAGS $APP/server/import.mjs https://$DOMAIN"
+  sudo -u konverty bash -c "set -a; . $ENVF; set +a; node $NODEFLAGS $APP/server/import.mjs ${EXPORT_FROM:-https://konverty-budget.cshirzad.workers.dev}"
 else echo "База уже есть, пропускаю (REIMPORT=1 — перенести заново)"; fi
 
 say "Сервис бота"
