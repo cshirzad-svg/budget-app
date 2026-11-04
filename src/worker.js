@@ -756,6 +756,19 @@ let tgGood = null; // какой путь до Telegram сработал пос�
 const tgApi = (env) => (env.TG_API ? (tgGood || env.TG_API) : TG_DIRECT).replace(/\/$/, '');
 // порядок попыток: сначала тот, что работал последним, потом другой
 const tgBases = (env) => { if (!env.TG_API) return [TG_DIRECT]; const relay = env.TG_API.replace(/\/$/, ''); const all = [TG_DIRECT, relay]; return tgGood ? [tgGood, ...all.filter((b) => b !== tgGood)] : all; };
+/* скачивание файла из Telegram: напрямую или через ретранслятор, что сработает */
+async function tgFile(env, filePath) {
+  let last;
+  for (const base of tgBases(env)) {
+    try {
+      const r = await fetch(`${base}/file/bot${env.BOT_TOKEN}/${filePath}`, { signal: AbortSignal.timeout(base === TG_DIRECT && env.TG_API ? 8000 : 30000) });
+      if (!r.ok) throw new Error('file HTTP ' + r.status);
+      return await r.arrayBuffer();
+    } catch (e) { last = e; }
+  }
+  throw last || new Error('file download failed');
+}
+let voiceErr = '';
 async function tg(env, method, body) {
   let last;
   for (let i = 0; i < 3; i++) {
@@ -1032,7 +1045,7 @@ export async function advise(env, state, question) {
 async function fileBytes(env, fileId) {
   const f = await tg(env, 'getFile', { file_id: fileId });
   if (!f.ok) return null;
-  return new Uint8Array(await (await fetch(`${tgApi(env)}/file/bot${env.BOT_TOKEN}/${f.result.file_path}`)).arrayBuffer());
+  return new Uint8Array(await tgFile(env, f.result.file_path));
 }
 export async function readReceipt(env, bytes) {
   const prompt = 'Это фото кассового чека. Найди ИТОГОВУЮ сумму покупки. Ответь ТОЛЬКО JSON: {"total":число,"cur":"RUB|CNY|USD|EUR|KZT|GEL|THB|TRY|AED","store":"название магазина или пусто","date":"YYYY-MM-DD или null","kind":"продукты|кафе|аптека|одежда|транспорт|быт|другое"}. Если это не чек — {"total":null}.';
@@ -1237,11 +1250,12 @@ async function unlinkPartner(env, owner, pid) {
 }
 
 async function transcribe(env, fileId) {
-  if (!env.AI) return null;
+  voiceErr = '';
+  if (!env.AI) { voiceErr = 'ИИ не настроен (нет CF_AI_TOKEN)'; return null; }
   try {
     const f = await tg(env, 'getFile', { file_id: fileId });
-    if (!f.ok) return null;
-    const buf = await (await fetch(`${tgApi(env)}/file/bot${env.BOT_TOKEN}/${f.result.file_path}`)).arrayBuffer();
+    if (!f.ok) { voiceErr = 'getFile: ' + JSON.stringify(f).slice(0, 150); return null; }
+    const buf = await tgFile(env, f.result.file_path);
     if (buf.byteLength > 6e6) return null;
     let b64 = ''; const u8 = new Uint8Array(buf);
     for (let i = 0; i < u8.length; i += 0x8000) b64 += String.fromCharCode(...u8.subarray(i, i + 0x8000));
@@ -1249,10 +1263,10 @@ async function transcribe(env, fileId) {
     try {
       const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: b64, language: 'ru', initial_prompt: 'Траты: кофе 300, такси 500, еда 50 юаней, отложил 5000.' });
       if (r && r.text && r.text.trim()) return r.text.trim();
-    } catch (e) { console.error('whisper-turbo', e); }
+    } catch (e) { console.error('whisper-turbo', e); voiceErr = 'whisper-turbo: ' + String(e && e.message || e).slice(0, 150); }
     const r2 = await env.AI.run('@cf/openai/whisper', { audio: [...u8] });
     return r2 && r2.text ? r2.text.trim() : null;
-  } catch (e) { console.error('voice', e); return null; }
+  } catch (e) { console.error('voice', e); voiceErr = (voiceErr ? voiceErr + ' | ' : '') + 'voice: ' + String(e && e.message || e).slice(0, 150); return null; }
 }
 
 async function foodMenu(env, st, state, chat, request, origin) {
@@ -1531,7 +1545,7 @@ async function onUpdate(update, env, origin) {
   }
   if (!text && (msg.voice || msg.audio)) {
     const heard = await transcribe(env, (msg.voice || msg.audio).file_id);
-    if (!heard) { await tg(env, 'sendMessage', { chat_id: chat, text: '🎤 Не смог разобрать голосовое. Скажи ещё раз чуть чётче или напиши текстом: «кофе 300».' }); return; }
+    if (!heard) { const why = voiceErr && (await store(env, '__registry__').getAdmin()) === uid ? '\n\n(админу) причина: ' + voiceErr : ''; await tg(env, 'sendMessage', { chat_id: chat, text: '🎤 Не смог разобрать голосовое. Скажи ещё раз чуть чётче или напиши текстом: «кофе 300».' + why }); return; }
     text = heard.replace(/[.!?…]+$/g, '').trim();
     try { const f0 = (await st.srvGet()).flags || {}; if (!f0.voice) await st.srvPatch({ flags: { ...f0, voice: 1 } }); } catch (e) { /* не критично */ }
     await tg(env, 'sendMessage', { chat_id: chat, text: `🎤 Услышал: «${text}»` });
