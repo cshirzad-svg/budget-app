@@ -751,19 +751,27 @@ export function buildCsv(state) {
 
 /* ---------- Telegram ---------- */
 /* адрес Telegram Bot API: на сервере в России — через ретранслятор (прямой доступ к api.telegram.org там нестабилен) */
-const tgApi = (env) => (env.TG_API || 'https://api.telegram.org').replace(/\/$/, '');
+const TG_DIRECT = 'https://api.telegram.org';
+let tgGood = null; // какой путь до Telegram сработал последним: напрямую или через ретранслятор
+const tgApi = (env) => (env.TG_API ? (tgGood || env.TG_API) : TG_DIRECT).replace(/\/$/, '');
+// порядок попыток: сначала тот, что работал последним, потом другой
+const tgBases = (env) => { if (!env.TG_API) return [TG_DIRECT]; const relay = env.TG_API.replace(/\/$/, ''); const all = [TG_DIRECT, relay]; return tgGood ? [tgGood, ...all.filter((b) => b !== tgGood)] : all; };
 async function tg(env, method, body) {
   let last;
   for (let i = 0; i < 3; i++) {
-    try {
-      const r = await fetch(`${tgApi(env)}/bot${env.BOT_TOKEN}/${method}`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000),
-      });
-      const j = await r.json();
-      if (r.status === 429 && i < 2) { last = j; const w = Math.min(30, +(j.parameters && j.parameters.retry_after) || 2); await new Promise((ok) => setTimeout(ok, w * 1000)); continue; }
-      if (r.status >= 500 && i < 2) { last = j; continue; }
-      return j;
-    } catch (e) { last = e; if (i < 2) await new Promise((ok) => setTimeout(ok, 700 * (i + 1))); }
+    for (const base of tgBases(env)) {
+      try {
+        const r = await fetch(`${base}/bot${env.BOT_TOKEN}/${method}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(base === TG_DIRECT && env.TG_API ? 6000 : 20000),
+        });
+        const j = await r.json();
+        tgGood = base;
+        if (r.status === 429 && i < 2) { last = j; const w = Math.min(30, +(j.parameters && j.parameters.retry_after) || 2); await new Promise((ok) => setTimeout(ok, w * 1000)); break; }
+        if (r.status >= 500 && i < 2) { last = j; break; }
+        return j;
+      } catch (e) { last = e; if (tgGood === base) tgGood = null; }
+    }
+    if (i < 2) await new Promise((ok) => setTimeout(ok, 700 * (i + 1)));
   }
   console.error('tg', method, last);
   return { ok: false };
