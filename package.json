@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --disable-warning=ExperimentalWarning --import ./tests/loader.mjs --test tests/finance.test.mjs"
+    "test": "node --disable-warning=ExperimentalWarning --import ./tests/loader.mjs --test tests/finance.test.mjs tests/rates.test.mjs tests/telegram.test.mjs tests/webhook-relay.test.mjs"
   }
 }
