@@ -229,16 +229,27 @@ export function conv(a, from, to, rates) {
   return (a / rates[from]) * rates[to];
 }
 
+const RATES_TTL_MS = 6 * 3600 * 1000;
+let ratesMemory = null, ratesFetchedAt = 0, ratesPending = null;
 export async function getRates() {
+  if (ratesMemory && Date.now() - ratesFetchedAt < RATES_TTL_MS) return ratesMemory;
+  if (ratesPending) return ratesPending;
+  ratesPending = loadRates();
+  try { return await ratesPending; } finally { ratesPending = null; }
+}
+async function loadRates() {
   const key = new Request('https://rates.cache/usd-v1');
   const cache = typeof caches !== 'undefined' ? caches.default : null;
-  if (cache) { const hit = await cache.match(key); if (hit) return hit.json(); }
+  if (cache) { const hit = await cache.match(key); if (hit) { ratesMemory = await hit.json(); ratesFetchedAt = Date.now(); return ratesMemory; } }
   try {
-    const r = await fetch('https://open.er-api.com/v6/latest/USD');
+    const r = await fetch('https://open.er-api.com/v6/latest/USD', { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return null;
     const j = await r.json();
     if (j.result !== 'success') return null;
     const rates = {};
     for (const c of Object.keys(CURS)) if (j.rates[c]) rates[c] = j.rates[c];
+    ratesMemory = rates;
+    ratesFetchedAt = Date.now();
     if (cache) await cache.put(key, new Response(JSON.stringify(rates), { headers: { 'cache-control': 'max-age=21600', 'content-type': 'application/json' } }));
     return rates;
   } catch { return null; }
@@ -640,7 +651,7 @@ async function runSchedule(env) {
   try {
     if ((await reg.meta('whv')) !== 3 && env.ORIGIN) {
       const o = env.ORIGIN.replace(/\/$/, '');
-      const w = await tg(env, 'setWebhook', { url: o + '/tg', secret_token: await webhookSecret(env.BOT_TOKEN), allowed_updates: ['message', 'callback_query', 'pre_checkout_query'] });
+      const w = await tg(env, 'setWebhook', { url: env.TG_WEBHOOK_URL || o + '/tg', secret_token: await webhookSecret(env.BOT_TOKEN), allowed_updates: ['message', 'callback_query', 'pre_checkout_query'] });
       if (w.ok) { await reg.meta('whv', 3); await tg(env, 'setChatMenuButton', { menu_button: { type: 'web_app', text: 'Мой бюджет', web_app: { url: o + '/' } } }); }
     }
   } catch (e) { console.error('whv', e); }
@@ -755,7 +766,7 @@ const TG_DIRECT = 'https://api.telegram.org';
 let tgGood = null; // какой путь до Telegram сработал последним: напрямую или через ретранслятор
 const tgApi = (env) => (env.TG_API ? (tgGood || env.TG_API) : TG_DIRECT).replace(/\/$/, '');
 // порядок попыток: сначала тот, что работал последним, потом другой
-const tgBases = (env) => { if (!env.TG_API) return [TG_DIRECT]; const relay = env.TG_API.replace(/\/$/, ''); const all = [TG_DIRECT, relay]; return tgGood ? [tgGood, ...all.filter((b) => b !== tgGood)] : all; };
+const tgBases = (env) => { if (!env.TG_API) return [TG_DIRECT]; const relay = env.TG_API.replace(/\/$/, ''); const all = env.TG_PREFER_RELAY ? [relay, TG_DIRECT] : [TG_DIRECT, relay]; return tgGood ? [tgGood, ...all.filter((b) => b !== tgGood)] : all; };
 /* скачивание файла из Telegram: напрямую или через ретранслятор, что сработает */
 async function tgFile(env, filePath) {
   let last;
@@ -769,20 +780,22 @@ async function tgFile(env, filePath) {
   throw last || new Error('file download failed');
 }
 let voiceErr = '';
-async function tg(env, method, body) {
+export async function tg(env, method, body) {
   let last;
   for (let i = 0; i < 3; i++) {
     for (const base of tgBases(env)) {
+      const started = Date.now();
       try {
         const r = await fetch(`${base}/bot${env.BOT_TOKEN}/${method}`, {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(base === TG_DIRECT && env.TG_API ? 6000 : 20000),
         });
         const j = await r.json();
+        if (env.FAST_ACK) console.info('tg_timing', method, base === TG_DIRECT ? 'direct' : 'relay', r.status, Date.now() - started);
         tgGood = base;
         if (r.status === 429 && i < 2) { last = j; const w = Math.min(30, +(j.parameters && j.parameters.retry_after) || 2); await new Promise((ok) => setTimeout(ok, w * 1000)); break; }
         if (r.status >= 500 && i < 2) { last = j; break; }
         return j;
-      } catch (e) { last = e; if (tgGood === base) tgGood = null; }
+      } catch (e) { if (env.FAST_ACK) console.warn('tg_timeout', method, base === TG_DIRECT ? 'direct' : 'relay', Date.now() - started); last = e; if (tgGood === base) tgGood = null; }
     }
     if (i < 2) await new Promise((ok) => setTimeout(ok, 700 * (i + 1)));
   }
@@ -1832,6 +1845,18 @@ export default {
 
     /* бот переехал на сервер в России: старый Worker больше ничего не записывает.
        Telegram получит 503 и повторит обновление позже — уже на новый сервер. */
+    // Telegram reaches Cloudflare reliably; forward only authenticated updates to the VPS.
+    // Preserve the origin's status so Telegram retries if delivery to the VPS fails.
+    if (env.MOVED && url.pathname === '/tg' && request.method === 'POST') {
+      const secret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
+      if (!env.BOT_TOKEN || secret !== await webhookSecret(env.BOT_TOKEN)) return new Response('forbidden', { status: 403 });
+      try {
+        return await fetch('https://konverty.app/tg', {
+          method: 'POST', headers: { 'content-type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': secret },
+          body: request.body, signal: AbortSignal.timeout(10000),
+        });
+      } catch { return new Response('origin unavailable', { status: 503 }); }
+    }
     if (env.MOVED && url.pathname !== '/__export' && (url.pathname === '/tg' || url.pathname.startsWith('/api') || request.method !== 'GET')) {
       return new Response('moved', { status: 503, headers: { 'retry-after': '60' } });
     }
@@ -1856,7 +1881,7 @@ export default {
       if (url.searchParams.get('key') !== (await sha256hex('setup:' + env.BOT_TOKEN))) return new Response('not found', { status: 404 });
       const base = (env.ORIGIN || origin + '/').replace(/\/$/, '');
       const r = await tg(env, 'setWebhook', {
-        url: base + '/tg',
+        url: env.TG_WEBHOOK_URL || base + '/tg',
         secret_token: await webhookSecret(env.BOT_TOKEN),
         allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
       });
@@ -1906,7 +1931,9 @@ export default {
       const update = await request.json();
       // на сервере отвечаем Telegram сразу, а обрабатываем в фоне: медленный ответ Telegram API
       // не задерживает вебхук, и Telegram не включает паузы между повторами (иначе бот отвечает через 10–20 минут)
-      const job = onUpdate(update, env, origin).catch((e) => console.error(e));
+      const received = Date.now();
+      if (env.FAST_ACK && update.message?.date) console.info('webhook_lag_ms', received - update.message.date * 1000);
+      const job = onUpdate(update, env, origin).catch((e) => console.error(e)).finally(() => { if (env.FAST_ACK) console.info('update_elapsed_ms', Date.now() - received); });
       if (!env.FAST_ACK) await job;
       return new Response('ok');
     }
