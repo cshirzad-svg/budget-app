@@ -1,0 +1,14 @@
+.checkout { max-width: 520px; padding-top: clamp(24px, 7vw, 60px); }
+.purchase { padding: clamp(22px, 6vw, 38px); box-shadow: 0 16px 44px #35246c16; }
+.purchase h1 { font-size: clamp(27px, 7vw, 38px); }
+.purchase p { text-align: start; }
+.price { margin: 18px 0 0; color: var(--accent); font-size: 42px; font-weight: 800; line-height: 1.1; }
+.price span { font-size: 15px; font-weight: 600; color: var(--muted); }
+.details { margin: 14px 0 24px; }
+.notice { margin: 16px 0; padding: 10px 14px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: 14px; }
+.primary { display: block; width: 100%; border: 0; border-radius: 13px; padding: 14px 18px; background: #6040d8; color: #fff; font: inherit; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; }
+.primary:hover { background: #5033bf; }
+.primary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.terms { display: flex; align-items: baseline; gap: 8px; margin: 20px 0 14px; font-size: 14px; }
+.terms input { accent-color: var(--accent); }
+#checkout-status { margin: 10px 0 0; }

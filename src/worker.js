@@ -76,16 +76,47 @@ export class UserStore extends DurableObject {
   async getAdmin() { return (await this.ctx.storage.get('admin')) || null; }
   async regGet(uid) { return (await this.ctx.storage.get('u:' + uid)) || null; }
   async meta(k, v) { if (v === undefined) return (await this.ctx.storage.get('m:' + k)) ?? null; if (v === null) await this.ctx.storage.delete('m:' + k); else await this.ctx.storage.put('m:' + k, v); return v; }
-  async createRoboOrder(uid, digest, sum, test, product = 'full') {
+  async openCheckout(id) {
+    const key = 'checkout:' + id;
     const storage = this.ctx.storage;
-    const codeKey = 'm:web_code:' + uid;
-    const code = await storage.get(codeKey);
-    if (!code || code.used || code.expires < Date.now() || code.digest !== digest) return null;
+    if (!await storage.get(key)) await storage.put(key, { expires: Date.now() + CHECKOUT_TTL });
+  }
+  async linkCheckout(id, uid) {
+    const key = 'checkout:' + id;
+    const storage = this.ctx.storage;
+    const session = await storage.get(key);
+    if (!session || session.expires <= Date.now() || session.used || (session.uid && session.uid !== uid)) return false;
+    if (!session.uid) await storage.put(key, { ...session, uid });
+    return true;
+  }
+  async checkoutStatus(id) {
+    const storage = this.ctx.storage;
+    const session = await storage.get('checkout:' + id);
+    if (!session || session.used || session.expires <= Date.now()) return 'expired';
+    if (!session.uid) return 'pending';
+    const owner = (await storage.get('u:' + session.uid))?.link || session.uid;
+    const account = await this.regGet(owner);
+    return account?.paid || account?.pdfUntil || (await this.getAdmin()) === owner ? 'pdf' : 'full';
+  }
+  async pruneCheckouts() {
+    const storage = this.ctx.storage;
+    const now = Date.now();
+    const sessions = await storage.list({ prefix: 'checkout:' });
+    const expired = [...sessions].filter(([, session]) => session.expires <= now).map(([key]) => key);
+    if (expired.length) await storage.delete(expired);
+  }
+  async createRoboOrder(id, sum, test, product = 'full') {
+    const storage = this.ctx.storage;
+    const key = 'checkout:' + id;
+    const session = await storage.get(key);
+    if (!session?.uid || session.used || session.expires <= Date.now()) return null;
+    const uid = session.uid;
     const owner = (await storage.get('u:' + uid))?.link || uid;
     const account = await storage.get('u:' + owner);
-    if (!test && ((await this.getAdmin()) === owner || (account?.paid && (product === 'full' || !account.roboLifetime)))) return null;
+    const hasFull = account?.paid || (await this.getAdmin()) === owner;
+    if (product === 'pdf' ? !hasFull && !account?.pdfUntil : hasFull) return null;
     const inv = ((await storage.get('m:inv_seq')) || 1000) + 1;
-    await storage.put({ [codeKey]: { used: true }, 'm:inv_seq': inv, ['m:robo_order:' + inv]: { owner, sum, test, product, offerRevision: 7, createdAt: Date.now() } });
+    await storage.put({ [key]: { expires: session.expires, used: true }, 'm:inv_seq': inv, ['m:robo_order:' + inv]: { owner, sum, test, product, offerRevision: 7, createdAt: Date.now() } });
     return { inv };
   }
   async confirmRoboOrder(inv, sum, test) {
@@ -634,6 +665,7 @@ const hm = (t) => { const [h, m] = String(t || '').split(':').map(Number); retur
 const APPKB = (env) => (env.ORIGIN ? [[{ text: '📊 Открыть бюджет', web_app: { url: env.ORIGIN } }]] : []);
 async function runSchedule(env) {
   const reg = store(env, '__registry__');
+  try { await reg.pruneCheckouts(); } catch (e) { console.error('checkout cleanup', e); }
   try {
     for (const [nick, text] of Object.entries(GIFT_MSG)) {
       if (await reg.meta('gift:' + nick)) continue;
@@ -1238,6 +1270,41 @@ async function accessOf(env, owner) {
 /* ---------- оплата картой через Robokassa (самозанятый, чеки в «Мой налог» автоматически) ---------- */
 // This rollout permits only test payments until the payment flow is verified.
 const ROBO_LIVE_RELEASE = false;
+const CHECKOUT_TTL = 10 * 60 * 1000;
+const CHECKOUT_COOKIE = '__Host-konverty_checkout';
+const checkoutCookie = (request) => (request.headers.get('cookie') || '')
+  .split(';').map((part) => part.trim()).find((part) => part.startsWith(CHECKOUT_COOKIE + '='))
+  ?.slice(CHECKOUT_COOKIE.length + 1).match(/^[a-f0-9]{64}$/)?.[0];
+const checkoutId = async (secret) => (await sha256hex(secret)).slice(0, 48);
+function checkoutPage({ enabled, test, product, link, price }) {
+  const pdf = product === 'pdf';
+  const title = pdf ? 'PDF-выписки' : 'Полный доступ';
+  const amount = pdf ? PDF_PRICE : price;
+  const details = pdf ? 'Распознавание банковских выписок на 30 дней. Продление вручную.' : 'Голосовые траты и ИИ-повар на весь срок работы сервиса.';
+  const actions = !enabled ? '<p>Оплата готовится.</p>' : link
+    ? `<a class="primary" href="${link}" target="_blank" rel="noopener noreferrer">Подтвердить в Telegram</a>
+      <p id="checkout-status" class="meta" role="status">Подтверди аккаунт в боте и вернись в эту вкладку.</p>
+      <noscript><a href="/checkout">Проверить подтверждение</a></noscript>
+      <script defer src="/checkout.js"></script>`
+    : `<form method="post" action="/checkout">
+        <input type="hidden" name="product" value="${product}">
+        <label class="terms"><input type="checkbox" name="offer" value="yes" required> <span>Принимаю <a href="/offer" target="_blank" rel="noopener">условия оферты</a></span></label>
+        <button class="primary" type="submit">${test ? 'Перейти к тестовой оплате' : 'Оплатить ' + amount + ' ₽'}</button>
+      </form>`;
+  return `<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title} — Бюджет в конвертах</title><link rel="stylesheet" href="/legal.css"><link rel="stylesheet" href="/checkout.css"></head>
+<body><main class="checkout"><nav><a href="/">← Бюджет в конвертах</a></nav>
+<section class="doc purchase">
+  <h1>${title}</h1>
+  <p class="price">${amount} ₽ <span>${pdf ? 'за 30 дней' : 'одним платежом'}</span></p>
+  <p class="details">${details}</p>
+  ${test ? '<p class="notice">Тестовая оплата. Списания и выдачи доступа не будет.</p>' : ''}
+  ${actions}
+</section>
+<footer><a href="/privacy">Политика обработки данных</a></footer>
+</main></body></html>`;
+}
 const roboConfigured = (env) => (env.ROBO_TEST === '1' || (ROBO_LIVE_RELEASE && env.ROBO_LIVE === '1')) && !!(env.ROBO_LOGIN && env.ROBO_PASS1 && env.ROBO_PASS2);
 const payOn = (env) => env.ROBO_TEST !== '1' && roboConfigured(env);
 const priceRub = (env) => Math.max(1, parseInt(env.PRICE_RUB || '990', 10) || 990);
@@ -1504,6 +1571,14 @@ async function onUpdate(update, env, origin) {
   const st = await userStore(env, uid, msg.from.first_name);
   if (update.update_id && (await st.seenUpd(update.update_id))) return;
   let text = (msg.text || msg.caption || '').trim();
+  const checkoutStart = text.match(/^\/start buy_([a-f0-9]{48})$/);
+  if (checkoutStart) {
+    const linked = roboConfigured(env) && await store(env, '__registry__').linkCheckout(checkoutStart[1], uid);
+    await tg(env, 'sendMessage', { chat_id: chat, text: linked
+      ? 'Аккаунт подтверждён. Вернись во вкладку сайта, где выбрал тариф.'
+      : 'Ссылка устарела или уже использована. Открой страницу заказа заново.' });
+    return;
+  }
   if (msg.successful_payment) {
     const sp = msg.successful_payment, owner = +String(sp.invoice_payload || '').split(':')[1] || st.owner;
     const reg0 = store(env, '__registry__');
@@ -1695,13 +1770,6 @@ async function onUpdate(update, env, origin) {
   if (text === '/admin') {
     const a = await reg.claimAdmin(uid);
     await tg(env, 'sendMessage', { chat_id: chat, text: a === uid ? '👑 Ты админ: сюда будут приходить отзывы. /stats — статистика.' : 'Админ уже назначен.' });
-    return;
-  }
-  if (text === '/webcode') {
-    if (!roboConfigured(env)) return;
-    const nonce = hex(crypto.getRandomValues(new Uint8Array(16)));
-    await reg.meta('web_code:' + uid, { digest: await sha256hex(nonce), expires: Date.now() + 600000 });
-    await tg(env, 'sendMessage', { chat_id: chat, text: `Код подтверждения аккаунта: <code>${uid}-${nonce}</code>\nДействует 10 минут. Никому его не пересылай.`, parse_mode: 'HTML' });
     return;
   }
   if (/^\/?(broadcast|рассылка)$/i.test(text)) {
@@ -1954,21 +2022,42 @@ export default {
     }
 
     if (url.pathname === '/checkout' && request.method === 'GET') {
-      const status = env.ROBO_TEST === '1' ? '<p>Тестовая оплата. Списания и выдачи доступа не будет.</p>' : '';
-      const html = `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Полный доступ — Бюджет в конвертах</title><link rel="stylesheet" href="/legal.css"><main><h1>Выбор доступа</h1><p>Текстовый учёт бесплатный. Оплата через Robokassa.</p>${status}${roboConfigured(env) ? '<form method="post" action="/checkout"><fieldset><legend>Тариф</legend><label><input type="radio" name="product" value="full" required> Голос и ИИ-повар — 990 ₽ одним платежом</label><p><label><input type="radio" name="product" value="pdf" required> PDF-выписки — 299 ₽ на 30 дней, продление вручную</label></p></fieldset><p>Отправь боту @konverty_budget_bot команду /webcode и вставь полученный код.</p><label>Код подтверждения <input name="code" required maxlength="50" autocomplete="off"></label><p><label><input name="offer" type="checkbox" value="yes" required> Принимаю <a href="/offer" target="_blank" rel="noopener">условия оферты</a></label></p><button type="submit">Перейти к оплате</button></form>' : '<p>Оплата готовится.</p>'}<p><a href="/privacy">Политика обработки данных</a></p></main></html>`;
-      return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+      const enabled = roboConfigured(env);
+      const test = enabled && env.ROBO_TEST === '1';
+      const headers = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' };
+      if (!enabled) return new Response(checkoutPage({ enabled, price: priceRub(env) }), { headers });
+
+      const reg = store(env, '__registry__');
+      const cookie = checkoutCookie(request);
+      let id = cookie && await checkoutId(cookie);
+      let status = id ? await reg.checkoutStatus(id) : 'expired';
+      if (status === 'expired') {
+        const secret = hex(crypto.getRandomValues(new Uint8Array(32)));
+        id = await checkoutId(secret);
+        await reg.openCheckout(id);
+        headers['set-cookie'] = CHECKOUT_COOKIE + '=' + secret + '; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=' + (CHECKOUT_TTL / 1000);
+        status = 'pending';
+      }
+      const link = status === 'pending' ? 'https://t.me/konverty_budget_bot?start=buy_' + id : '';
+      return new Response(checkoutPage({ enabled, test, product: status, link, price: priceRub(env) }), { headers });
+    }
+    if (url.pathname === '/checkout/status' && request.method === 'GET') {
+      const secret = checkoutCookie(request);
+      const status = secret && roboConfigured(env)
+        ? await store(env, '__registry__').checkoutStatus(await checkoutId(secret)) : 'expired';
+      return new Response(status, { headers: { 'content-type': 'text/plain', 'cache-control': 'no-store' } });
     }
     if (url.pathname === '/checkout' && request.method === 'POST') {
       if (!roboConfigured(env)) return new Response('Оплата готовится.', { status: 503 });
       if (request.headers.get('origin') !== url.origin) return new Response('Forbidden', { status: 403 });
       const form = await request.formData().catch(() => null);
-      const code = String(form?.get('code') ?? '').trim().match(/^([1-9]\d{0,14})-([a-f0-9]{32})$/);
-      if (!code || form.get('offer') !== 'yes') return new Response('Проверь код и подтверждение оферты.', { status: 400 });
+      const secret = checkoutCookie(request);
+      if (!secret || form?.get('offer') !== 'yes') return Response.redirect(url.origin + '/checkout', 303);
       const product = form.get('product');
-      if (product !== 'full' && product !== 'pdf') return new Response('Выбери тариф.', { status: 400 });
+      if (product !== 'full' && product !== 'pdf') return new Response('Тариф недоступен.', { status: 400 });
       const sum = (product === 'pdf' ? PDF_PRICE : priceRub(env)).toFixed(2);
-      const order = await store(env, '__registry__').createRoboOrder(Number(code[1]), await sha256hex(code[2]), sum, env.ROBO_TEST === '1', product);
-      if (!order) return new Response('Код недействителен, уже использован или у аккаунта есть полный доступ.', { status: 400 });
+      const order = await store(env, '__registry__').createRoboOrder(await checkoutId(secret), sum, env.ROBO_TEST === '1', product);
+      if (!order) return Response.redirect(url.origin + '/checkout', 303);
       return Response.redirect(await payLink(env, order, sum, product), 303);
     }
     if (url.pathname === '/pay/result') {
