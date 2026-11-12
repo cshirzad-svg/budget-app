@@ -2110,25 +2110,14 @@ export default {
       const f = request.method === 'POST' ? await request.formData().catch(() => null) : null;
       const g = (k) => (f && f.get(k)) || url.searchParams.get(k) || '';
       const out = g('OutSum'), inv = g('InvId'), sig = g('SignatureValue');
-      const diagnostic = (status) => {
-        if (env.ROBO_TEST === '1') console.info('robokassa_test_result', status);
-      };
       const ok = sig && (await roboMd5(env, `${out}:${inv}:${env.ROBO_PASS2}`)).toLowerCase() === sig.toLowerCase();
-      if (!ok || !/^\d+$/.test(inv)) {
-        diagnostic(!sig || !out || !inv ? 'missing_fields' : 'invalid_signature_or_invoice');
-        return new Response('bad sign', { status: 400 });
-      }
-      if (!/^\d+(?:\.\d{1,6})?$/.test(out) || !Number.isFinite(Number(out)) || Number(out) !== Number(Number(out).toFixed(2))) {
-        diagnostic('invalid_amount');
-        return new Response('bad amount', { status: 400 });
-      }
+      if (!ok || !/^\d+$/.test(inv)) return new Response('bad sign', { status: 400 });
+      if (!/^\d+(?:\.\d{1,6})?$/.test(out) || !Number.isFinite(Number(out)) || Number(out) !== Number(Number(out).toFixed(2))) return new Response('bad amount', { status: 400 });
       const reg = store(env, '__registry__');
       const result = await reg.confirmRoboOrder(inv, Number(out).toFixed(2), env.ROBO_TEST === '1');
-      diagnostic(typeof result === 'string' ? result : result.status);
       if (result === 'mismatch') return new Response('order mismatch', { status: 400 });
       if (result.status === 'preview_confirmed') {
-        const notification = await tg(env, 'sendMessage', { chat_id: result.owner, text: 'Тестовая оплата подтверждена. При реальной оплате здесь появится сообщение «Полный доступ открыт». Списаний не было.', reply_markup: appButton(origin) });
-        diagnostic(notification.ok ? 'telegram_sent' : 'telegram_failed');
+        await tg(env, 'sendMessage', { chat_id: result.owner, text: 'Тестовая оплата подтверждена. При реальной оплате здесь появится сообщение «Полный доступ открыт». Списаний не было.', reply_markup: appButton(origin) });
       } else if (result.status === 'confirmed' || result.status === 'pdf_confirmed') {
         const uid = result.owner;
         const before = await reg.regGet(+uid);
