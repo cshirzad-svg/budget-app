@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = process.env.KONVERTY_DATA || '/var/lib/konverty';
@@ -72,7 +73,8 @@ env.TG_API = process.env.TG_API || 'https://konverty-budget.cshirzad.workers.dev
 env.TG_PREFER_RELAY = true; // на VPS начинаем с рабочего ретранслятора, прямой маршрут остаётся запасным
 env.TG_WEBHOOK_URL = process.env.TG_WEBHOOK_URL || 'https://konverty-budget.cshirzad.workers.dev/tg';
 env.FAST_ACK = '1'; // процесс живёт постоянно — фоновую обработку не обрывают
-for (const k of ['BOT_TOKEN', 'CF_ACCOUNT_ID', 'CF_AI_TOKEN', 'ORIGIN', 'PRODAMUS_KEY']) if (process.env[k]) env[k] = process.env[k];
+for (const k of ['BOT_TOKEN', 'CF_ACCOUNT_ID', 'CF_AI_TOKEN', 'ORIGIN', 'ROBO_LOGIN', 'ROBO_PASS1', 'ROBO_PASS2', 'ROBO_TEST', 'ROBO_LIVE']) if (process.env[k]) env[k] = process.env[k];
+env.ROBO_MD5 = (value) => createHash('md5').update(value).digest('hex');
 
 /* Durable Objects: один объект на имя, вызовы к одному объекту идут строго по очереди (как в Cloudflare) */
 const objs = new Map(), queues = new Map();
@@ -149,7 +151,6 @@ const WORKER_FIRST = new Set(['/', '/index.html', '/offer', '/privacy', '/consen
 const ERRS = [];
 const _err = console.error.bind(console);
 console.error = (...a) => { ERRS.push(new Date().toISOString() + ' ' + a.map((x) => (x && x.cause ? 'cause=' + (x.cause.code || x.cause.message) + ' ' : '') + ((x && x.stack) || (typeof x === 'object' ? JSON.stringify(x) : String(x)))).join(' ').slice(0, 500)); while (ERRS.length > 40) ERRS.shift(); _err(...a); };
-const { createHash } = await import('node:crypto');
 async function health() {
   const out = { uptime: Math.round(process.uptime()), node: process.version, errors: ERRS.slice(-25) };
   const t0 = Date.now();

@@ -51,7 +51,7 @@ const BC_VER = 'news-2b';
 const BC_TEXT = (gift) => 'Привет! 👋 Небольшая новость от бота «Бюджет в конвертах».\n\n' +
   (gift
     ? '🎁 У тебя полный доступ навсегда и бесплатно, ничего платить не нужно.\n\n'
-    : '📄 <b>Мы оформили условия.</b> Первые 3 дня бесплатно, дальше полный доступ навсегда за 990 ₽: один платёж, без подписки, а если передумаешь в течение 14 дней — вернём деньги. Оплата картой и через СБП скоро заработает.\n\n') +
+    : '📄 <b>Мы оформили условия.</b> Текстовый бюджет бесплатный. Голос и ИИ-повар — 990 ₽ одним платежом. PDF — первые 3 дня бесплатно, затем 299 ₽ за 30 дней. Готовим оплату в рублях через Robokassa на сайте konverty.app.\n\n') +
   'Оферта: <a href="https://konverty.app/offer">konverty.app/offer</a>\nКонфиденциальность: <a href="https://konverty.app/privacy">konverty.app/privacy</a>\n\n' +
   'Пиши траты сюда, как другу, бот сам разложит их по конвертам 👇';
 async function sendNews(env, chat, gift, origin) {
@@ -76,6 +76,41 @@ export class UserStore extends DurableObject {
   async getAdmin() { return (await this.ctx.storage.get('admin')) || null; }
   async regGet(uid) { return (await this.ctx.storage.get('u:' + uid)) || null; }
   async meta(k, v) { if (v === undefined) return (await this.ctx.storage.get('m:' + k)) ?? null; if (v === null) await this.ctx.storage.delete('m:' + k); else await this.ctx.storage.put('m:' + k, v); return v; }
+  async createRoboOrder(uid, digest, sum, test, product = 'full') {
+    const storage = this.ctx.storage;
+    const codeKey = 'm:web_code:' + uid;
+    const code = await storage.get(codeKey);
+    if (!code || code.used || code.expires < Date.now() || code.digest !== digest) return null;
+    const owner = (await storage.get('u:' + uid))?.link || uid;
+    const account = await storage.get('u:' + owner);
+    if (!test && ((await this.getAdmin()) === owner || (account?.paid && (product === 'full' || !account.roboLifetime)))) return null;
+    const inv = ((await storage.get('m:inv_seq')) || 1000) + 1;
+    await storage.put({ [codeKey]: { used: true }, 'm:inv_seq': inv, ['m:robo_order:' + inv]: { owner, sum, test, product, offerRevision: 7, createdAt: Date.now() } });
+    return { inv, owner };
+  }
+  async confirmRoboOrder(inv, owner, sum, test) {
+    const storage = this.ctx.storage;
+    const key = 'm:robo_order:' + inv;
+    const order = await storage.get(key);
+    if (!order || order.owner !== owner || order.sum !== sum || order.test !== test) return 'mismatch';
+    if (order.paidAt) return 'duplicate';
+    if (test) {
+      await storage.put(key, { ...order, paidAt: Date.now() });
+      return 'test_confirmed';
+    }
+    const userKey = 'u:' + owner;
+    const user = (await storage.get(userKey)) || {};
+    const paidAt = Date.now();
+    const pdf = order.product === 'pdf';
+    const entitlement = pdf
+      ? { pdfUntil: Math.max(paidAt, user.pdfUntil || 0) + 30 * 864e5 }
+      : { paid: true, roboLifetime: true, paidAt, paidRub: Number(sum), inv };
+    await storage.put({
+      [key]: { ...order, paidAt },
+      [userKey]: { first: paidAt, ...user, ...entitlement },
+    });
+    return pdf ? 'pdf_confirmed' : 'confirmed';
+  }
   /* общий бюджет */
   async getLink() { return (await this.ctx.storage.get('link')) || null; }
   async setLink(owner) { if (owner) await this.ctx.storage.put('link', owner); else await this.ctx.storage.delete('link'); }
@@ -656,7 +691,6 @@ async function runSchedule(env) {
     }
   } catch (e) { console.error('whv', e); }
   const users = await reg.regList();
-  const admin0 = await reg.getAdmin();
   const now = Date.now();
   let rates = null;
   for (const u of users) {
@@ -674,18 +708,6 @@ async function runSchedule(env) {
         }
         await reg.regUpdate(u.uid, { remNext: next });
       } catch (e) { console.error('rem', u.uid, e); }
-    }
-    /* дожимы пробного периода: 2-й день, последний день, после окончания (только когда оплата подключена) */
-    if (payOn(env) && !u.paid && !u.blocked && !u.link && u.trialEnd && admin0 !== u.uid && mins >= 12 * 60 && mins < 22 * 60) {
-      try {
-        const start = u.trialEnd - TRIAL_DAYS * 864e5, el = now - start;
-        const stage = now >= u.trialEnd ? 3 : el >= 2 * 864e5 ? 2 : el >= 864e5 ? 1 : 0;
-        const done = u.nudge || 0;
-        if (stage > done) {
-          const r = await tg(env, 'sendMessage', { chat_id: u.uid, ...trialNudge(env, stage, u), reply_markup: await payButtons(env, u.uid) });
-          await reg.regUpdate(u.uid, { nudge: stage, ...(r.ok ? {} : { blocked: Date.now() }) });
-        }
-      } catch (e) { console.error('nudge', u.uid, e); }
     }
     /* регулярные платежи */
     if (Array.isArray(u.subs) && u.subs.length && mins >= 10 * 60) {
@@ -1196,49 +1218,49 @@ async function userStore(env, uid, name) {
   };
 }
 const TRIAL_DAYS = 3;
+const AI_CONSENT_REVISION = 7;
+async function hasAiConsent(env, uid) {
+  const consent = await store(env, '__registry__').meta('ai_consent:' + uid);
+  return consent?.revision === AI_CONSENT_REVISION && !!consent.acceptedAt && !consent.revokedAt && Date.now() - consent.acceptedAt < 365 * 864e5;
+}
+function requestAiConsent(env, chat) {
+  return tg(env, 'sendMessage', { chat_id: chat, text: 'Для обработки материалов и ответов с ИИ нужно отдельное согласие. После подтверждения повтори запрос.', reply_markup: { inline_keyboard: [[{ text: 'Прочитать согласие', url: 'https://konverty.app/consent' }], [{ text: 'Даю согласие на ИИ-обработку', callback_data: 'ai_consent:7' }]] } });
+}
 async function accessOf(env, owner) {
   const reg = store(env, '__registry__');
   const [admin, u] = await Promise.all([reg.getAdmin(), reg.regGet(owner)]);
-  if (admin === owner || (u && u.paid)) return { paid: true, active: true };
   let te = u && u.trialEnd;
-  if (!te) { te = Date.now() + TRIAL_DAYS * 864e5; await reg.regUpdate(owner, { trialEnd: te }); }
-  // пока оплата картой не подключена, пробный период не блокирует
-  return { paid: false, trialEnd: te, active: !payOn(env) || Date.now() < te };
+  if (!te) { te = (u?.first || Date.now()) + TRIAL_DAYS * 864e5; await reg.regUpdate(owner, { trialEnd: te }); }
+  const paid = admin === owner || !!u?.paid;
+  const pdfUntil = u?.pdfUntil || 0;
+  return { paid, active: true, trialEnd: te, pdfUntil, pdf: (paid && !u?.roboLifetime) || Date.now() < Math.max(te, pdfUntil) };
 }
 /* ---------- оплата картой через Robokassa (самозанятый, чеки в «Мой налог» автоматически) ---------- */
-const payOn = (env) => !!(env.ROBO_LOGIN && env.ROBO_PASS1 && env.ROBO_PASS2);
+const roboConfigured = (env) => (env.ROBO_TEST === '1' || env.ROBO_LIVE === '1') && !!(env.ROBO_LOGIN && env.ROBO_PASS1 && env.ROBO_PASS2);
+const payOn = (env) => env.ROBO_TEST !== '1' && roboConfigured(env);
 const priceRub = (env) => Math.max(1, parseInt(env.PRICE_RUB || '990', 10) || 990);
-async function md5(s) { const d = await crypto.subtle.digest('MD5', new TextEncoder().encode(s)); return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join(''); }
-async function payLink(env, owner) {
-  const reg = store(env, '__registry__');
-  const inv = ((await reg.meta('inv_seq')) || 1000) + 1;
-  await reg.meta('inv_seq', inv);
-  const sum = priceRub(env).toFixed(2);
-  const sig = await md5(`${env.ROBO_LOGIN}:${sum}:${inv}:${env.ROBO_PASS1}:Shp_uid=${owner}`);
-  const q = new URLSearchParams({ MerchantLogin: env.ROBO_LOGIN, OutSum: sum, InvId: String(inv), Description: 'Бюджет в конвертах — полный доступ навсегда', SignatureValue: sig, Shp_uid: String(owner), Culture: 'ru' });
+const PDF_PRICE = 299;
+async function roboMd5(env, value) {
+  if (env.ROBO_MD5) return env.ROBO_MD5(value);
+  return hex(await crypto.subtle.digest('MD5', new TextEncoder().encode(value)));
+}
+async function payLink(env, { owner, inv }, sum, product) {
+  const sig = await roboMd5(env, `${env.ROBO_LOGIN}:${sum}:${inv}:${env.ROBO_PASS1}:Shp_uid=${owner}`);
+  const q = new URLSearchParams({ MerchantLogin: env.ROBO_LOGIN, OutSum: sum, InvId: String(inv), Description: product === 'pdf' ? 'Бюджет в конвертах — PDF-выписки на 30 дней' : 'Бюджет в конвертах — голос и ИИ-повар', SignatureValue: sig, Shp_uid: String(owner), Culture: 'ru' });
   if (env.ROBO_TEST === '1') q.set('IsTest', '1');
   return 'https://auth.robokassa.ru/Merchant/Index.aspx?' + q.toString();
 }
-async function payButtons(env, owner) {
-  return { inline_keyboard: [[{ text: `💳 Оплатить картой или СБП — ${priceRub(env)} ₽`, url: await payLink(env, owner) }], [{ text: '📄 Условия и возврат', url: 'https://konverty.app/offer' }]] };
+async function payButtons() {
+  return { inline_keyboard: [[{ text: '📄 Условия и возврат', url: 'https://konverty.app/offer' }]] };
 }
 // Реквизиты для оферты/сайта: задаются переменными LEGAL_* в Cloudflare
 const legal = (env) => ({
   FIO: env.LEGAL_FIO || '[ФИО самозанятого]', INN: env.LEGAL_INN || '[ИНН]', EMAIL: env.LEGAL_EMAIL || '[email]',
   CITY: env.LEGAL_CITY || 'Россия', PRICE: String(priceRub(env)), TRIAL: String(TRIAL_DAYS), DATE: env.LEGAL_DATE || '19.10.2026',
 });
-const PAY_SOON ='💳 Оплата картой появится совсем скоро — я напишу, как только можно будет открыть полный доступ.';
+const PAY_SOON ='💳 Готовим оплату в рублях через Robokassa на сайте konverty.app.';
 const priceStars = (env) => Math.max(1, parseInt(env.PRICE_STARS || '600', 10) || 600);
 const invoiceBody = (env, owner) => ({ title: 'Бюджет в конвертах — навсегда', description: 'Полный доступ к боту и приложению без ограничений: траты, конверты, ИИ-повар, напоминания, общий бюджет на двоих.', payload: 'full:' + owner, currency: 'XTR', prices: [{ label: 'Полный доступ', amount: priceStars(env) }], provider_token: '' });
-async function sendPaywall(env, chat, owner, acc) {
-  await tg(env, 'sendMessage', { chat_id: chat, text: `🔒 Пробный период закончился${acc && acc.trialEnd ? ' ' + new Date(acc.trialEnd).toLocaleDateString('ru-RU') : ''}.\n\nВсе твои записи сохранены. Чтобы продолжить вести бюджет, открой полный доступ навсегда — один раз, без подписки, ${priceRub(env)} ₽ 👇`, reply_markup: await payButtons(env, owner) });
-}
-function trialNudge(env, stage, u) {
-  const P = priceRub(env), n = u.n || 0;
-  if (stage === 1) return { text: `👋 Второй день с ботом — загляни в «сегодня», там твой лимит на день${n ? `, у тебя уже ${n} ${n % 10 === 1 && n % 100 !== 11 ? 'запись' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'записи' : 'записей'}` : ''}.\n\nЧто ещё есть в полной версии:\n👨‍🍳 ИИ-повар: меню на неделю под твой бюджет и список покупок\n📸 Скрин из банка или PDF-выписка — бот сам разнесёт траты\n👫 Общий бюджет на двоих\n🔁 Регулярные платежи с резервом в конверте\n\nПолный доступ навсегда — ${P} ₽, один раз, без подписки.` };
-  if (stage === 2) return { text: `⏳ Завтра заканчивается пробный период.\n\nВсе записи сохранятся. Чтобы до зарплаты каждый день было видно, сколько можно тратить, и чтобы бот продолжил считать бюджет, напоминать о платежах и раскладывать траты по конвертам, открой полный доступ: ${P} ₽ навсегда, это меньше, чем одна доставка еды в неделю.\n\nПередумаешь в течение 14 дней — вернём деньги.` };
-  return { text: `🔒 Пробный период закончился.\n\nТвои ${n ? n + ' ' : ''}записи, конверты и цели на месте — ничего не пропало. Открой полный доступ, и продолжим с того же места: ${P} ₽ один раз, навсегда.\n\nЕсли что-то не понравилось, напиши «поддержка» — правда хочу знать.` };
-}
 async function chefLocked(env, chat, owner) {
   const head = '👨‍🍳 ИИ-повар есть только в полной версии: меню на неделю под твой бюджет, список покупок и цена корзины.\n\nВсё остальное в пробном периоде работает.';
   if (!payOn(env)) { await tg(env, 'sendMessage', { chat_id: chat, text: head + '\n\n' + PAY_SOON }); return; }
@@ -1296,6 +1318,12 @@ async function foodMenu(env, st, state, chat, request, origin) {
 }
 
 async function onUpdate(update, env, origin) {
+  const consentAction = update.callback_query;
+  if (consentAction?.data === 'ai_consent:7' && consentAction.message?.chat.type === 'private' && consentAction.message.chat.id === consentAction.from.id) {
+    await store(env, '__registry__').meta('ai_consent:' + consentAction.from.id, { revision: AI_CONSENT_REVISION, acceptedAt: Date.now() });
+    await tg(env, 'answerCallbackQuery', { callback_query_id: consentAction.id, text: 'Согласие записано. Повтори запрос.' });
+    return;
+  }
   if (update.pre_checkout_query) {
     const pq = update.pre_checkout_query;
     await tg(env, 'answerPreCheckoutQuery', { pre_checkout_query_id: pq.id, ok: /^full:\d+$/.test(pq.invoice_payload || '') });
@@ -1419,6 +1447,7 @@ async function onUpdate(update, env, origin) {
   }
   if (update.callback_query && /^m:/.test(update.callback_query.data || '')) {
     const q = update.callback_query, st = await userStore(env, q.from.id, q.from.first_name), state = (await st.getState()) || {};
+    if (!await hasAiConsent(env, q.from.id)) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id }); await requestAiConsent(env, q.from.id); return; }
     if (!(await accessOf(env, st.owner)).paid) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id }); await chefLocked(env, q.from.id, st.owner); return; }
     await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: '👨‍🍳 Готовлю…' });
     const last = (state.srv && state.srv.menuAI && state.srv.menuAI.q) || '';
@@ -1491,19 +1520,25 @@ async function onUpdate(update, env, origin) {
     return;
   }
   if (/^\/?(paysupport|terms|поддержка)/i.test(text)) {
-    if (/^\/?terms/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: `📄 Условия: 3 дня бесплатно, дальше полный доступ навсегда за ${priceRub(env)} ₽ (разовый платёж картой или через СБП). Передумал в течение 14 дней — напиши «поддержка», вернём деньги полностью.\n\nОферта: https://konverty.app/offer\nКонфиденциальность: https://konverty.app/privacy`, disable_web_page_preview: true }); return; }
+    if (/^\/?terms/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: `📄 Условия: текстовый бюджет бесплатный. Голос и ИИ-повар — 990 ₽ одним платежом. PDF бесплатно первые три дня, затем 299 ₽ за 30 дней с ручным продлением. Передумал в течение 14 дней — напиши «поддержка», вернём деньги полностью.\n\nОферта: https://konverty.app/offer\nКонфиденциальность: https://konverty.app/privacy`, disable_web_page_preview: true }); return; }
     const adm = await store(env, '__registry__').getAdmin(), body = text.replace(/^\/?(paysupport|поддержка)\s*/i, '');
     if (!body) { await tg(env, 'sendMessage', { chat_id: chat, text: '🛟 Опиши проблему одним сообщением, начиная со слова «поддержка». Например: «поддержка не проходит оплата».' }); return; }
     if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `🛟 Поддержка от ${msg.from.first_name || ''}${msg.from.username ? ' @' + msg.from.username : ''} (id ${uid}):\n\n${body.slice(0, 1500)}` });
     await tg(env, 'sendMessage', { chat_id: chat, text: '🛟 Передал создателю, он ответит здесь же.' });
     return;
   }
-  if (!/^\/(start|help|admin|stats|grant)/.test(text)) {
-    const acc = await accessOf(env, st.owner);
-    if (!acc.active) { await sendPaywall(env, chat, st.owner, acc); return; }
+  if (text === '/consent') { await requestAiConsent(env, chat); return; }
+  if (text === '/revoke_consent') {
+    const registry = store(env, '__registry__'), key = 'ai_consent:' + uid;
+    const previous = await registry.meta(key);
+    if (previous) await registry.meta(key, { ...previous, revokedAt: Date.now() });
+    await tg(env, 'sendMessage', { chat_id: chat, text: 'Согласие на ИИ-обработку отозвано. Текстовый учёт доступен.' });
+    return;
   }
   const pdfDoc = msg.document && (/pdf/i.test(msg.document.mime_type || '') || /\.pdf$/i.test(msg.document.file_name || '')) ? msg.document : null;
   if (pdfDoc) {
+    if (payOn(env) && !(await accessOf(env, st.owner)).pdf) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Пробный доступ к PDF закончился. PDF-выписки стоят 299 ₽ за 30 дней. Траты по-прежнему можно записывать текстом бесплатно.' }); return; }
+    if (!await hasAiConsent(env, uid)) { await requestAiConsent(env, chat); return; }
     const state = (await st.getState()) || {};
     if (!env.AI) { await tg(env, 'sendMessage', { chat_id: chat, text: 'PDF пока не читаю. Пришли скрин истории операций.' }); return; }
     if (pdfDoc.file_size > 20 * 1024 * 1024) { await tg(env, 'sendMessage', { chat_id: chat, text: '📄 Файл больше 20 МБ, Telegram не даёт его скачать боту. Выгрузи выписку за более короткий период.' }); return; }
@@ -1524,6 +1559,7 @@ async function onUpdate(update, env, origin) {
   }
   const imgDoc = msg.document && /^image\//.test(msg.document.mime_type || '') ? msg.document : null;
   if ((msg.photo || imgDoc) && !/\d/.test(text)) {
+    if (!await hasAiConsent(env, uid)) { await requestAiConsent(env, chat); return; }
     const state = (await st.getState()) || {};
     if (!env.AI) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Фото чеков пока не понимаю. Напиши сумму текстом: «продукты 1500».' }); return; }
     if (!(await st.aiTick(todayStr(state), AI_MAX))) { await tg(env, 'sendMessage', { chat_id: chat, text: '😴 На сегодня лимит запросов к ИИ закончился. Напиши сумму текстом: «продукты 1500».' }); return; }
@@ -1557,6 +1593,8 @@ async function onUpdate(update, env, origin) {
     return;
   }
   if (!text && (msg.voice || msg.audio)) {
+    if (payOn(env) && !(await accessOf(env, st.owner)).paid) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Голосовые траты входят в «Полный доступ» за 990 ₽ одним платежом. Ту же трату можно записать текстом бесплатно.' }); return; }
+    if (!await hasAiConsent(env, uid)) { await requestAiConsent(env, chat); return; }
     const heard = await transcribe(env, (msg.voice || msg.audio).file_id);
     if (!heard) { const why = voiceErr && (await store(env, '__registry__').getAdmin()) === uid ? '\n\n(админу) причина: ' + voiceErr : ''; await tg(env, 'sendMessage', { chat_id: chat, text: '🎤 Не смог разобрать голосовое. Скажи ещё раз чуть чётче или напиши текстом: «кофе 300».' + why }); return; }
     text = heard.replace(/[.!?…]+$/g, '').trim();
@@ -1569,6 +1607,8 @@ async function onUpdate(update, env, origin) {
   const ru = await reg.regUpdate(uid, { seen: Date.now(), name: msg.from.first_name || '', user: msg.from.username || '' });
   if (ru.gift && ru.bcGot !== BC_VER && (await reg.meta('bc:' + BC_VER))) { await reg.regUpdate(uid, { bcGot: BC_VER }); await sendNews(env, chat, true, origin); }
   const fi = foodIntent(text);
+  if (fi && /аллерги/i.test(text)) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Для меню перечисли продукты, которые хочешь исключить, без сведений о здоровье.' }); return; }
+  if (fi && !await hasAiConsent(env, uid)) { await requestAiConsent(env, chat); return; }
   if ((fi === 'menu' || fi === 'swap') && !(await accessOf(env, st.owner)).paid) { await chefLocked(env, chat, st.owner); return; }
   if (fi) {
     const state = (await st.getState()) || {};
@@ -1644,7 +1684,7 @@ async function onUpdate(update, env, origin) {
         '🎤 Можно голосом: просто запиши голосовое «такси пятьсот».\n' +
         '⏰ «напомни в 16:30 оплатить интернет 500»\n\n' +
         'Кнопки внизу 👇 — сводки, напоминания, отмена. Команды учить не нужно.\n\n' +
-        '<i>Пользуясь ботом, ты принимаешь <a href="https://konverty.app/offer">условия</a> и <a href="https://konverty.app/consent">согласие на обработку данных</a>.</i>',
+        '<i>Условия доступны в <a href="https://konverty.app/offer">оферте</a>. Для ИИ-функций бот попросит отдельное согласие.</i>',
       disable_web_page_preview: true,
     });
     await tg(env, 'sendMessage', { chat_id: chat, text: 'Готов записывать 🙂 Напиши первую трату, например: кофе 300', reply_markup: KB });
@@ -1653,6 +1693,13 @@ async function onUpdate(update, env, origin) {
   if (text === '/admin') {
     const a = await reg.claimAdmin(uid);
     await tg(env, 'sendMessage', { chat_id: chat, text: a === uid ? '👑 Ты админ: сюда будут приходить отзывы. /stats — статистика.' : 'Админ уже назначен.' });
+    return;
+  }
+  if (text === '/webcode') {
+    if (!roboConfigured(env)) return;
+    const nonce = hex(crypto.getRandomValues(new Uint8Array(16)));
+    await reg.meta('web_code:' + uid, { digest: await sha256hex(nonce), expires: Date.now() + 600000 });
+    await tg(env, 'sendMessage', { chat_id: chat, text: `Код подтверждения аккаунта: <code>${uid}-${nonce}</code>\nДействует 10 минут. Никому его не пересылай.`, parse_mode: 'HTML' });
     return;
   }
   if (/^\/?(broadcast|рассылка)$/i.test(text)) {
@@ -1757,6 +1804,7 @@ async function onUpdate(update, env, origin) {
   }
   const parsed = parseExpense(text, state);
   if (!parsed && env.AI && isQuestion(text)) {
+    if (!await hasAiConsent(env, uid)) { await requestAiConsent(env, chat); return; }
     if (!(await st.aiTick(todayStr(state), AI_MAX))) { await tg(env, 'sendMessage', { chat_id: chat, text: '😴 На сегодня лимит вопросов к ИИ закончился. Завтра продолжим!' }); return; }
     let a = ''; try { a = await advise(env, state, text); } catch (e) { console.error('advise', e); }
     await tg(env, 'sendMessage', { chat_id: chat, text: a ? '🤖 ' + a.slice(0, 1500) : '😕 Не получилось ответить, попробуй ещё раз.', reply_markup: appButton(origin) });
@@ -1894,35 +1942,57 @@ export default {
         'Пиши траты как другу: «кофе 300», «такси 35 юаней», «отложил 5к». Можно голосом 🎤\n\n' +
         'Я разложу всё по категориям, посчитаю в любой валюте и покажу, сколько можно потратить сегодня.\n\n' +
         '⏰ Напомню об оплатах, пришлю итоги недели и месяца.\n\n' +
-        `💳 3 дня бесплатно, дальше полный доступ навсегда — ${priceRub(env)} ₽ (разово).\n\n` +
+        `💳 Текстовый бюджет бесплатный. Голос и ИИ-повар — 990 ₽ одним платежом. PDF — 299 ₽ за 30 дней после трёх пробных дней.\n\n` +
         `${legal(env).FIO}, самозанятый, ИНН ${legal(env).INN}\nОферта: konverty.app/offer\n\nЖми «Старт» 👇` });
-      const rs = await tg(env, 'setMyShortDescription', { short_description: `💌 Бюджет в Telegram. 3 дня бесплатно, потом ${priceRub(env)} ₽ навсегда. ${legal(env).FIO}, самозанятый, ИНН ${legal(env).INN}` });
+      const rs = await tg(env, 'setMyShortDescription', { short_description: `💌 Бюджет в Telegram. Текстовый учёт бесплатный. Голос, ИИ-повар и PDF — платные функции. ${legal(env).FIO}, самозанятый, ИНН ${legal(env).INN}` });
       return new Response(
         (r.ok ? '✅ Готово! Бот подключён к серверу. Можно закрыть страницу и писать боту.' : '❌ Ошибка: ' + JSON.stringify(r)) + `\n\nКоманды: ${rc.ok ? '✅' : '❌ ' + JSON.stringify(rc)}\nОписание: ${rd.ok ? '✅' : '❌ ' + JSON.stringify(rd)}\nКороткое описание: ${rs.ok ? '✅' : '❌ ' + JSON.stringify(rs)}`,
         { headers: { 'content-type': 'text/plain; charset=utf-8' } },
       );
     }
 
+    if (url.pathname === '/checkout' && request.method === 'GET') {
+      const status = env.ROBO_TEST === '1' ? '<p>Тестовая оплата. Списания и выдачи доступа не будет.</p>' : '';
+      const html = `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Полный доступ — Бюджет в конвертах</title><link rel="stylesheet" href="/legal.css"><main><h1>Выбор доступа</h1><p>Текстовый учёт бесплатный. Оплата через Robokassa.</p>${status}${roboConfigured(env) ? '<form method="post" action="/checkout"><fieldset><legend>Тариф</legend><label><input type="radio" name="product" value="full" required> Голос и ИИ-повар — 990 ₽ одним платежом</label><p><label><input type="radio" name="product" value="pdf" required> PDF-выписки — 299 ₽ на 30 дней, продление вручную</label></p></fieldset><p>Отправь боту @konverty_budget_bot команду /webcode и вставь полученный код.</p><label>Код подтверждения <input name="code" required maxlength="50" autocomplete="off"></label><p><label><input name="offer" type="checkbox" value="yes" required> Принимаю <a href="/offer" target="_blank" rel="noopener">условия оферты</a></label></p><button type="submit">Перейти к оплате</button></form>' : '<p>Оплата готовится.</p>'}<p><a href="/privacy">Политика обработки данных</a></p></main></html>`;
+      return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+    }
+    if (url.pathname === '/checkout' && request.method === 'POST') {
+      if (!roboConfigured(env)) return new Response('Оплата готовится.', { status: 503 });
+      if (request.headers.get('origin') !== url.origin) return new Response('Forbidden', { status: 403 });
+      const form = await request.formData().catch(() => null);
+      const code = String(form?.get('code') ?? '').trim().match(/^([1-9]\d{0,14})-([a-f0-9]{32})$/);
+      if (!code || form.get('offer') !== 'yes') return new Response('Проверь код и подтверждение оферты.', { status: 400 });
+      const product = form.get('product');
+      if (product !== 'full' && product !== 'pdf') return new Response('Выбери тариф.', { status: 400 });
+      const sum = (product === 'pdf' ? PDF_PRICE : priceRub(env)).toFixed(2);
+      const order = await store(env, '__registry__').createRoboOrder(Number(code[1]), await sha256hex(code[2]), sum, env.ROBO_TEST === '1', product);
+      if (!order) return new Response('Код недействителен, уже использован или у аккаунта есть полный доступ.', { status: 400 });
+      return Response.redirect(await payLink(env, order, sum, product), 303);
+    }
     if (url.pathname === '/pay/result') {
-      if (!payOn(env)) return new Response('off', { status: 404 });
+      if (!roboConfigured(env)) return new Response('off', { status: 404 });
       const f = request.method === 'POST' ? await request.formData().catch(() => null) : null;
       const g = (k) => (f && f.get(k)) || url.searchParams.get(k) || '';
       const out = g('OutSum'), inv = g('InvId'), uid = g('Shp_uid'), sig = g('SignatureValue');
-      const ok = sig && (await md5(`${out}:${inv}:${env.ROBO_PASS2}:Shp_uid=${uid}`)).toLowerCase() === sig.toLowerCase();
-      if (!ok || !/^\d+$/.test(uid)) return new Response('bad sign', { status: 400 });
+      const ok = sig && (await roboMd5(env, `${out}:${inv}:${env.ROBO_PASS2}:Shp_uid=${uid}`)).toLowerCase() === sig.toLowerCase();
+      if (!ok || !/^\d+$/.test(uid) || !/^\d+$/.test(inv)) return new Response('bad sign', { status: 400 });
+      if (!/^\d+(?:\.\d{1,6})?$/.test(out) || !Number.isFinite(Number(out)) || Number(out) !== Number(Number(out).toFixed(2))) return new Response('bad amount', { status: 400 });
       const reg = store(env, '__registry__');
-      const before = await reg.regGet(+uid);
-      if (!(before && before.paid && before.inv === inv)) {
-        await reg.regUpdate(+uid, { paid: true, paidAt: Date.now(), paidRub: +out, inv });
-        await tg(env, 'sendMessage', { chat_id: +uid, text: '💎 Оплата прошла! Полный доступ открыт навсегда. Спасибо, что ты с нами 🙌', reply_markup: appButton(origin) });
+      const result = await reg.confirmRoboOrder(inv, Number(uid), Number(out).toFixed(2), env.ROBO_TEST === '1');
+      if (result === 'mismatch') return new Response('order mismatch', { status: 400 });
+      if (result === 'confirmed' || result === 'pdf_confirmed') {
+        const before = await reg.regGet(+uid);
+        const message = result === 'pdf_confirmed' ? 'Оплата подтверждена. Доступ к PDF-выпискам продлён на 30 дней.' : 'Оплата подтверждена. Голосовые траты и ИИ-повар открыты на весь срок работы сервиса.';
+        await tg(env, 'sendMessage', { chat_id: +uid, text: message, reply_markup: appButton(origin) });
         const adm = await reg.getAdmin();
         if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `💰 Новая оплата: ${(before && before.name) || uid}${before && before.user ? ' @' + before.user : ''} — ${out} ₽ (счёт ${inv})` });
       }
       return new Response('OK' + inv, { headers: { 'content-type': 'text/plain' } });
     }
     if (url.pathname === '/pay/ok' || url.pathname === '/pay/fail') {
+      if (env.ROBO_TEST === '1') return new Response('Тестовый режим Robokassa', { headers: { 'content-type': 'text/plain; charset=utf-8' } });
       const good = url.pathname === '/pay/ok';
-      return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Бюджет в конвертах</title><body style="font:17px/1.5 system-ui,sans-serif;text-align:center;padding:48px 20px;background:#f6f3ff;color:#1d1b2e"><div style="font-size:64px">${good ? '💎' : '😕'}</div><h2>${good ? 'Оплата прошла!' : 'Оплата не прошла'}</h2><p>${good ? 'Полный доступ уже открыт. Возвращайся в Telegram — бот прислал подтверждение.' : 'Деньги не списаны. Вернись в Telegram и попробуй ещё раз.'}</p><p><a href="https://t.me/konverty_budget_bot" style="display:inline-block;background:#6d4cff;color:#fff;padding:12px 22px;border-radius:14px;text-decoration:none;font-weight:700">Вернуться в бот</a></p></body>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+      return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Бюджет в конвертах</title><body style="font:17px/1.5 system-ui,sans-serif;text-align:center;padding:48px 20px;background:#f6f3ff;color:#1d1b2e"><div style="font-size:64px">${good ? '💎' : '😕'}</div><h2>${good ? 'Проверяем оплату' : 'Оплата не прошла'}</h2><p>${good ? 'Бот сообщит об открытии доступа после подтверждения платежа Robokassa.' : 'Деньги не списаны. Вернись в Telegram и попробуй ещё раз.'}</p><p><a href="https://t.me/konverty_budget_bot" style="display:inline-block;background:#6d4cff;color:#fff;padding:12px 22px;border-radius:14px;text-decoration:none;font-weight:700">Вернуться в бот</a></p></body>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
     }
     if (url.pathname === '/tg' && request.method === 'POST') {
       if (request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== (await webhookSecret(env.BOT_TOKEN))) {
@@ -1958,6 +2028,7 @@ export default {
     if (url.pathname === '/api/ai' && request.method === 'POST') {
       const user = await checkInitData(request.headers.get('X-Init-Data'), env.BOT_TOKEN);
       if (!user) return json({ ok: false, error: 'unauthorized' }, 401);
+      if (!await hasAiConsent(env, user.id)) return json({ ok: false, error: 'consent_required' }, 403);
       const st = await userStore(env, user.id, user.first_name), state = (await st.getState()) || {};
       const b = await request.json().catch(() => ({}));
       if (b.act === 'prefs') return json({ ok: true, srv: await st.srvPatch({ prefs: (Array.isArray(b.prefs) ? b.prefs : []).map((x) => String(x).trim().toLowerCase()).filter(Boolean).slice(0, 20) }) });
@@ -2000,8 +2071,7 @@ export default {
         return json({ ok: true });
       }
       if (b.act === 'invoice') {
-        if (!payOn(env)) return json({ ok: false, error: 'soon' });
-        return json({ ok: true, link: await payLink(env, st.owner) });
+        return json({ ok: false, error: 'soon' });
       }
       if (b.act === 'pic' && typeof b.png === 'string' && b.png.length < 6e6) {
         const bin = Uint8Array.from(atob(b.png.replace(/^data:image\/\w+;base64,/, '')), (c) => c.charCodeAt(0));
