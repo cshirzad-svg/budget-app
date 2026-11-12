@@ -114,3 +114,73 @@ test('matching an order grants only its entitlement and repeated confirmation do
   assert.equal((await registry.confirmRoboOrder(renewal.inv, '299.00', false)).status, 'pdf_confirmed');
   assert.equal((await registry.regGet(42)).pdfUntil, firstPeriod.pdfUntil + 30 * 864e5);
 });
+
+test('the admin Telegram button opens the 990-ruble test checkout and sends confirmation without granting access', async (t) => {
+  const registry = registryForTest();
+  const admin = 42;
+  await registry.claimAdmin(admin);
+  const messages = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'https://api.telegram.org/bottest-only/sendMessage');
+    messages.push(JSON.parse(options.body));
+    return Response.json({ ok: true });
+  });
+  const env = {
+    BOT_TOKEN: 'test-only',
+    ROBO_LOGIN: 'test-store',
+    ROBO_PASS1: 'test-one',
+    ROBO_PASS2: 'test-two',
+    ROBO_TEST: '1',
+    ROBO_MD5: (value) => createHash('md5').update(value).digest('hex'),
+    USERS: { idFromName: (name) => name, get: () => registry },
+  };
+  const origin = 'https://konverty.example';
+  const sendStart = (id) => worker.fetch(new Request(origin + '/tg', {
+    method: 'POST',
+    headers: { 'X-Telegram-Bot-Api-Secret-Token': createHash('sha256').update('wh:' + env.BOT_TOKEN).digest('hex').slice(0, 48) },
+    body: JSON.stringify({ message: { chat: { id, type: 'private' }, from: { id }, text: '/start' } }),
+  }), env);
+  await sendStart(43);
+  assert.ok(messages[0].reply_markup.inline_keyboard.flat().every((button) => !button.url));
+  await sendStart(admin);
+  const button = messages[2].reply_markup.inline_keyboard.flat().find((button) => button.url);
+  assert.match(button.text, /Купить за 990 ₽/);
+  const open = () => worker.fetch(new Request(button.url), env);
+  const redirect = await open();
+  assert.equal(redirect.status, 303);
+  assert.equal(redirect.headers.get('location'), '/checkout');
+  assert.equal((await open()).status, 404);
+  const cookie = redirect.headers.get('set-cookie').split(';')[0];
+  const checkout = origin + '/checkout';
+  const headers = { cookie, origin };
+  const page = await (await worker.fetch(new Request(checkout, { headers }), env)).text();
+  assert.match(page, /Полный доступ/);
+  assert.match(page, /990 ₽/);
+  assert.doesNotMatch(page, /299 ₽|Подтвердить в Telegram|webcode/);
+  const form = (product) => worker.fetch(new Request(checkout, {
+    method: 'POST', headers, body: new URLSearchParams({ offer: 'yes', product }),
+  }), env);
+  assert.equal((await form('pdf')).headers.get('location'), checkout);
+  const payment = new URL((await form('full')).headers.get('location'));
+  assert.equal(payment.origin, 'https://auth.robokassa.ru');
+  assert.equal(payment.searchParams.get('IsTest'), '1');
+  assert.equal(payment.searchParams.get('OutSum'), '990.00');
+  assert.equal(payment.searchParams.has('Shp_uid'), false);
+  const inv = payment.searchParams.get('InvId');
+  const confirm = () => worker.fetch(new Request(origin + '/pay/result', {
+    method: 'POST',
+    body: new URLSearchParams({ InvId: inv, OutSum: '990.00', SignatureValue: env.ROBO_MD5('990.00:' + inv + ':' + env.ROBO_PASS2) }),
+  }), env);
+  assert.equal(await (await confirm()).text(), 'OK' + inv);
+  assert.equal(await (await confirm()).text(), 'OK' + inv);
+  const confirmations = messages.filter((message) => message.text.includes('Тестовая оплата подтверждена'));
+  assert.equal(confirmations.length, 1);
+  assert.equal(confirmations[0].chat_id, admin);
+  assert.equal((await registry.regGet(admin))?.paid, undefined);
+  const returnPage = await (await worker.fetch(new Request(origin + '/pay/ok'), env)).text();
+  assert.match(returnPage, /Проверяем тестовую оплату/);
+  assert.match(returnPage, /Вернуться в бот/);
+  delete env.ROBO_TEST;
+  await sendStart(admin);
+  assert.ok(messages.at(-2).reply_markup.inline_keyboard.flat().every((button) => !button.url));
+});

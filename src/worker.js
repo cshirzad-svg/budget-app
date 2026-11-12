@@ -81,11 +81,25 @@ export class UserStore extends DurableObject {
     const storage = this.ctx.storage;
     if (!await storage.get(key)) await storage.put(key, { expires: Date.now() + CHECKOUT_TTL });
   }
+  async openCheckoutPreview(id, uid) {
+    if (uid !== await this.getAdmin()) return false;
+    await this.ctx.storage.put('checkout:' + id, { expires: Date.now() + CHECKOUT_TTL, uid, preview: true });
+    return true;
+  }
+  async redeemCheckoutPreview(id, browserId) {
+    const storage = this.ctx.storage;
+    const key = 'checkout:' + id;
+    const session = await storage.get(key);
+    if (!session?.preview || session.redeemed || session.expires <= Date.now()) return false;
+    if (session.uid !== await this.getAdmin()) return false;
+    await storage.put({ [key]: { expires: session.expires, used: true }, ['checkout:' + browserId]: { ...session, redeemed: true } });
+    return true;
+  }
   async linkCheckout(id, uid) {
     const key = 'checkout:' + id;
     const storage = this.ctx.storage;
     const session = await storage.get(key);
-    if (!session || session.expires <= Date.now() || session.used || (session.uid && session.uid !== uid)) return false;
+    if (!session || session.preview || session.expires <= Date.now() || session.used || (session.uid && session.uid !== uid)) return false;
     if (!session.uid) await storage.put(key, { ...session, uid });
     return true;
   }
@@ -93,6 +107,7 @@ export class UserStore extends DurableObject {
     const storage = this.ctx.storage;
     const session = await storage.get('checkout:' + id);
     if (!session || session.used || session.expires <= Date.now()) return 'expired';
+    if (session.preview) return session.redeemed ? 'full' : 'expired';
     if (!session.uid) return 'pending';
     const owner = (await storage.get('u:' + session.uid))?.link || session.uid;
     const account = await this.regGet(owner);
@@ -111,12 +126,13 @@ export class UserStore extends DurableObject {
     const session = await storage.get(key);
     if (!session?.uid || session.used || session.expires <= Date.now()) return null;
     const uid = session.uid;
-    const owner = (await storage.get('u:' + uid))?.link || uid;
+    if (session.preview && (!session.redeemed || !test || product !== 'full' || uid !== await this.getAdmin())) return null;
+    const owner = session.preview ? uid : (await storage.get('u:' + uid))?.link || uid;
     const account = await storage.get('u:' + owner);
     const hasFull = account?.paid || (await this.getAdmin()) === owner;
-    if (product === 'pdf' ? !hasFull && !account?.pdfUntil : hasFull) return null;
+    if (!session.preview && (product === 'pdf' ? !hasFull && !account?.pdfUntil : hasFull)) return null;
     const inv = ((await storage.get('m:inv_seq')) || 1000) + 1;
-    await storage.put({ [key]: { expires: session.expires, used: true }, 'm:inv_seq': inv, ['m:robo_order:' + inv]: { owner, sum, test, product, offerRevision: 7, createdAt: Date.now() } });
+    await storage.put({ [key]: { expires: session.expires, used: true }, 'm:inv_seq': inv, ['m:robo_order:' + inv]: { owner, sum, test, product, preview: !!session.preview, offerRevision: 7, createdAt: Date.now() } });
     return { inv };
   }
   async confirmRoboOrder(inv, sum, test) {
@@ -127,6 +143,7 @@ export class UserStore extends DurableObject {
     if (order.paidAt) return 'duplicate';
     if (test) {
       await storage.put(key, { ...order, paidAt: Date.now() });
+      if (order.preview) return { status: 'preview_confirmed', owner: order.owner };
       return 'test_confirmed';
     }
     const userKey = 'u:' + order.owner;
@@ -1276,6 +1293,9 @@ const checkoutCookie = (request) => (request.headers.get('cookie') || '')
   .split(';').map((part) => part.trim()).find((part) => part.startsWith(CHECKOUT_COOKIE + '='))
   ?.slice(CHECKOUT_COOKIE.length + 1).match(/^[a-f0-9]{64}$/)?.[0];
 const checkoutId = async (secret) => (await sha256hex(secret)).slice(0, 48);
+const newCheckoutSecret = () => hex(crypto.getRandomValues(new Uint8Array(32)));
+const checkoutSetCookie = (secret) =>
+  CHECKOUT_COOKIE + '=' + secret + '; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=' + (CHECKOUT_TTL / 1000);
 function checkoutPage({ enabled, test, product, link, price }) {
   const pdf = product === 'pdf';
   const title = pdf ? 'PDF-выписки' : 'Полный доступ';
@@ -1752,8 +1772,15 @@ async function onUpdate(update, env, origin) {
     const access = await accessOf(env, st.owner);
     const trial = !access.paid && Date.now() < access.trialEnd;
     const welcomeButton = trial ? 'Попробовать бесплатно' : '📊 Открыть бюджет';
+    const welcomeKeyboard = appButton(origin, welcomeButton);
+    if (env.ROBO_TEST === '1' && roboConfigured(env) && uid === await reg.getAdmin()) {
+      const secret = newCheckoutSecret();
+      if (await reg.openCheckoutPreview(await checkoutId(secret), uid)) {
+        welcomeKeyboard.inline_keyboard.push([{ text: 'Купить за ' + priceRub(env) + ' ₽ · тест', url: origin + '/checkout/preview/' + secret }]);
+      }
+    }
     await tg(env, 'sendMessage', {
-      chat_id: chat, parse_mode: 'HTML', reply_markup: appButton(origin, welcomeButton),
+      chat_id: chat, parse_mode: 'HTML', reply_markup: welcomeKeyboard,
       text: '👋 Привет! Я помогаю дожить до зарплаты с остатком.\n\n' +
         'Раскладываем зарплату по конвертам за 5 минут, и дальше я каждый день считаю, сколько можно потратить сегодня.\n\n' +
         '<b>Как это работает:</b>\n' +
@@ -2026,6 +2053,19 @@ export default {
       );
     }
 
+    const preview = url.pathname.match(/^\/checkout\/preview\/([a-f0-9]{64})$/);
+    if (preview && request.method === 'GET') {
+      const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
+      if (env.ROBO_TEST === '1' && roboConfigured(env)) {
+        const secret = newCheckoutSecret();
+        if (await store(env, '__registry__').redeemCheckoutPreview(await checkoutId(preview[1]), await checkoutId(secret))) {
+          return new Response(null, { status: 303, headers: { ...headers, location: '/checkout', 'set-cookie': checkoutSetCookie(secret) } });
+        }
+      }
+      return new Response('Тестовая ссылка недоступна. Открой бота и нажми /start, чтобы получить новую.', {
+        status: 404, headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' },
+      });
+    }
     if (url.pathname === '/checkout' && request.method === 'GET') {
       const enabled = roboConfigured(env);
       const test = enabled && env.ROBO_TEST === '1';
@@ -2037,10 +2077,10 @@ export default {
       let id = cookie && await checkoutId(cookie);
       let status = id ? await reg.checkoutStatus(id) : 'expired';
       if (status === 'expired') {
-        const secret = hex(crypto.getRandomValues(new Uint8Array(32)));
+        const secret = newCheckoutSecret();
         id = await checkoutId(secret);
         await reg.openCheckout(id);
-        headers['set-cookie'] = CHECKOUT_COOKIE + '=' + secret + '; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=' + (CHECKOUT_TTL / 1000);
+        headers['set-cookie'] = checkoutSetCookie(secret);
         status = 'pending';
       }
       const link = status === 'pending' ? 'https://t.me/konverty_budget_bot?start=buy_' + id : '';
@@ -2076,7 +2116,9 @@ export default {
       const reg = store(env, '__registry__');
       const result = await reg.confirmRoboOrder(inv, Number(out).toFixed(2), env.ROBO_TEST === '1');
       if (result === 'mismatch') return new Response('order mismatch', { status: 400 });
-      if (result.status === 'confirmed' || result.status === 'pdf_confirmed') {
+      if (result.status === 'preview_confirmed') {
+        await tg(env, 'sendMessage', { chat_id: result.owner, text: 'Тестовая оплата подтверждена. При реальной оплате здесь появится сообщение «Полный доступ открыт». Списаний не было.', reply_markup: appButton(origin) });
+      } else if (result.status === 'confirmed' || result.status === 'pdf_confirmed') {
         const uid = result.owner;
         const before = await reg.regGet(+uid);
         const message = result.status === 'pdf_confirmed' ? 'Оплата подтверждена. Доступ к PDF-выпискам продлён на 30 дней.' : 'Оплата подтверждена. Голосовые траты и ИИ-повар открыты на весь срок работы сервиса.';
@@ -2087,8 +2129,18 @@ export default {
       return new Response('OK' + inv, { headers: { 'content-type': 'text/plain' } });
     }
     if (url.pathname === '/pay/ok' || url.pathname === '/pay/fail') {
-      if (env.ROBO_TEST === '1') return new Response('Тестовый режим Robokassa', { headers: { 'content-type': 'text/plain; charset=utf-8' } });
       const good = url.pathname === '/pay/ok';
+      if (env.ROBO_TEST === '1') {
+        const title = good ? 'Проверяем тестовую оплату' : 'Тестовая оплата отменена';
+        const details = good ? 'Когда Robokassa подтвердит платёж, бот пришлёт сообщение. Списания не будет.' : 'Списания не было. Вернись в бот, чтобы повторить тест.';
+        return new Response(`<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title} — Бюджет в конвертах</title><link rel="stylesheet" href="/legal.css"><link rel="stylesheet" href="/checkout.css"></head>
+<body><main class="checkout"><section class="doc purchase">
+<h1>${title}</h1><p class="details">${details}</p>
+<a class="primary" href="https://t.me/konverty_budget_bot">Вернуться в бот</a>
+</section></main></body></html>`, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+      }
       return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Бюджет в конвертах</title><body style="font:17px/1.5 system-ui,sans-serif;text-align:center;padding:48px 20px;background:#f6f3ff;color:#1d1b2e"><div style="font-size:64px">${good ? '💎' : '😕'}</div><h2>${good ? 'Проверяем оплату' : 'Оплата не прошла'}</h2><p>${good ? 'Бот сообщит об открытии доступа после подтверждения платежа Robokassa.' : 'Деньги не списаны. Вернись в Telegram и попробуй ещё раз.'}</p><p><a href="https://t.me/konverty_budget_bot" style="display:inline-block;background:#6d4cff;color:#fff;padding:12px 22px;border-radius:14px;text-decoration:none;font-weight:700">Вернуться в бот</a></p></body>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
     }
     if (url.pathname === '/tg' && request.method === 'POST') {
