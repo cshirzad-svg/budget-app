@@ -857,7 +857,7 @@ export async function tg(env, method, body) {
   return { ok: false };
 }
 let ORIGIN_FIX = null;
-const appButton = (origin) => ({ inline_keyboard: [[{ text: '📊 Открыть бюджет', web_app: { url: (ORIGIN_FIX || origin + '/') } }]] });
+const appButton = (origin, label = '📊 Открыть бюджет') => ({ inline_keyboard: [[{ text: label, web_app: { url: (ORIGIN_FIX || origin + '/') } }]] });
 
 /* ---------- ключевые слова вместо команд ---------- */
 export const KB = { keyboard: [[{ text: '☀️ Сегодня' }, { text: '📊 Итоги месяца' }], [{ text: '📅 Неделя' }, { text: '✉️ Категории' }], [{ text: '⏰ Напоминания' }, { text: '🔁 Платежи' }], [{ text: '↩️ Отменить' }, { text: '💡 Помощь' }]], resize_keyboard: true, is_persistent: true, input_field_placeholder: 'Напиши трату: кофе 300' };
@@ -1749,16 +1749,21 @@ async function onUpdate(update, env, origin) {
         'А ещё понимаю слова: <b>сегодня</b>, <b>итоги</b>, <b>неделя</b>, <b>категории</b>, <b>напоминания</b>, <b>платежи</b>, <b>отменить</b>. Или жми кнопки внизу 👇' });
       return;
     }
+    const access = await accessOf(env, st.owner);
+    const trial = !access.paid && Date.now() < access.trialEnd;
+    const welcomeButton = trial ? 'Попробовать бесплатно' : '📊 Открыть бюджет';
     await tg(env, 'sendMessage', {
-      chat_id: chat, parse_mode: 'HTML', reply_markup: appButton(origin),
+      chat_id: chat, parse_mode: 'HTML', reply_markup: appButton(origin, welcomeButton),
       text: '👋 Привет! Я помогаю дожить до зарплаты с остатком.\n\n' +
         'Раскладываем зарплату по конвертам за 5 минут, и дальше я каждый день считаю, сколько можно потратить сегодня.\n\n' +
         '<b>Как это работает:</b>\n' +
-        '1️⃣ Нажми «📊 Открыть бюджет» и за минуту настрой: режим, валюту, доход.\n' +
+        '1️⃣ Нажми кнопку ниже и настрой режим, валюту и доход.\n' +
         '2️⃣ Пиши траты сюда, как другу:\n' +
         '   • «кофе 300»\n   • «вчера такси 35 юаней»\n   • «отложил 5к»\n' +
         '3️⃣ Я сам разложу по категориям и покажу графики в приложении.\n\n' +
-        '🎤 Можно голосом: просто запиши голосовое «такси пятьсот».\n' +
+        'Текстовый учёт бесплатный без ограничения по времени. ' +
+        (trial ? 'PDF-выписки можно попробовать в первые 3 дня. ' : '') +
+        'Голосовые траты и ИИ-повар входят в полный доступ.\n\n' +
         '⏰ «напомни в 16:30 оплатить интернет 500»\n\n' +
         'Кнопки внизу 👇 — сводки, напоминания, отмена. Команды учить не нужно.\n\n' +
         '<i>Условия доступны в <a href="https://konverty.app/offer">оферте</a>. Для ИИ-функций бот попросит отдельное согласие.</i>',
