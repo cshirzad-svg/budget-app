@@ -1236,7 +1236,9 @@ async function accessOf(env, owner) {
   return { paid, active: true, trialEnd: te, pdfUntil, pdf: (paid && !u?.roboLifetime) || Date.now() < Math.max(te, pdfUntil) };
 }
 /* ---------- оплата картой через Robokassa (самозанятый, чеки в «Мой налог» автоматически) ---------- */
-const roboConfigured = (env) => (env.ROBO_TEST === '1' || env.ROBO_LIVE === '1') && !!(env.ROBO_LOGIN && env.ROBO_PASS1 && env.ROBO_PASS2);
+// This rollout permits only test payments until the payment flow is verified.
+const ROBO_LIVE_RELEASE = false;
+const roboConfigured = (env) => (env.ROBO_TEST === '1' || (ROBO_LIVE_RELEASE && env.ROBO_LIVE === '1')) && !!(env.ROBO_LOGIN && env.ROBO_PASS1 && env.ROBO_PASS2);
 const payOn = (env) => env.ROBO_TEST !== '1' && roboConfigured(env);
 const priceRub = (env) => Math.max(1, parseInt(env.PRICE_RUB || '990', 10) || 990);
 const PDF_PRICE = 299;
