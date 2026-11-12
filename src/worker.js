@@ -86,19 +86,19 @@ export class UserStore extends DurableObject {
     if (!test && ((await this.getAdmin()) === owner || (account?.paid && (product === 'full' || !account.roboLifetime)))) return null;
     const inv = ((await storage.get('m:inv_seq')) || 1000) + 1;
     await storage.put({ [codeKey]: { used: true }, 'm:inv_seq': inv, ['m:robo_order:' + inv]: { owner, sum, test, product, offerRevision: 7, createdAt: Date.now() } });
-    return { inv, owner };
+    return { inv };
   }
-  async confirmRoboOrder(inv, owner, sum, test) {
+  async confirmRoboOrder(inv, sum, test) {
     const storage = this.ctx.storage;
     const key = 'm:robo_order:' + inv;
     const order = await storage.get(key);
-    if (!order || order.owner !== owner || order.sum !== sum || order.test !== test) return 'mismatch';
+    if (!order || order.sum !== sum || order.test !== test) return 'mismatch';
     if (order.paidAt) return 'duplicate';
     if (test) {
       await storage.put(key, { ...order, paidAt: Date.now() });
       return 'test_confirmed';
     }
-    const userKey = 'u:' + owner;
+    const userKey = 'u:' + order.owner;
     const user = (await storage.get(userKey)) || {};
     const paidAt = Date.now();
     const pdf = order.product === 'pdf';
@@ -109,7 +109,7 @@ export class UserStore extends DurableObject {
       [key]: { ...order, paidAt },
       [userKey]: { first: paidAt, ...user, ...entitlement },
     });
-    return pdf ? 'pdf_confirmed' : 'confirmed';
+    return { status: pdf ? 'pdf_confirmed' : 'confirmed', owner: order.owner };
   }
   /* общий бюджет */
   async getLink() { return (await this.ctx.storage.get('link')) || null; }
@@ -1244,9 +1244,9 @@ async function roboMd5(env, value) {
   if (env.ROBO_MD5) return env.ROBO_MD5(value);
   return hex(await crypto.subtle.digest('MD5', new TextEncoder().encode(value)));
 }
-async function payLink(env, { owner, inv }, sum, product) {
-  const sig = await roboMd5(env, `${env.ROBO_LOGIN}:${sum}:${inv}:${env.ROBO_PASS1}:Shp_uid=${owner}`);
-  const q = new URLSearchParams({ MerchantLogin: env.ROBO_LOGIN, OutSum: sum, InvId: String(inv), Description: product === 'pdf' ? 'Бюджет в конвертах — PDF-выписки на 30 дней' : 'Бюджет в конвертах — голос и ИИ-повар', SignatureValue: sig, Shp_uid: String(owner), Culture: 'ru' });
+async function payLink(env, { inv }, sum, product) {
+  const sig = await roboMd5(env, `${env.ROBO_LOGIN}:${sum}:${inv}:${env.ROBO_PASS1}`);
+  const q = new URLSearchParams({ MerchantLogin: env.ROBO_LOGIN, OutSum: sum, InvId: String(inv), Description: product === 'pdf' ? 'Бюджет в конвертах — PDF-выписки на 30 дней' : 'Бюджет в конвертах — голос и ИИ-повар', SignatureValue: sig, Culture: 'ru' });
   if (env.ROBO_TEST === '1') q.set('IsTest', '1');
   return 'https://auth.robokassa.ru/Merchant/Index.aspx?' + q.toString();
 }
@@ -1973,16 +1973,17 @@ export default {
       if (!roboConfigured(env)) return new Response('off', { status: 404 });
       const f = request.method === 'POST' ? await request.formData().catch(() => null) : null;
       const g = (k) => (f && f.get(k)) || url.searchParams.get(k) || '';
-      const out = g('OutSum'), inv = g('InvId'), uid = g('Shp_uid'), sig = g('SignatureValue');
-      const ok = sig && (await roboMd5(env, `${out}:${inv}:${env.ROBO_PASS2}:Shp_uid=${uid}`)).toLowerCase() === sig.toLowerCase();
-      if (!ok || !/^\d+$/.test(uid) || !/^\d+$/.test(inv)) return new Response('bad sign', { status: 400 });
+      const out = g('OutSum'), inv = g('InvId'), sig = g('SignatureValue');
+      const ok = sig && (await roboMd5(env, `${out}:${inv}:${env.ROBO_PASS2}`)).toLowerCase() === sig.toLowerCase();
+      if (!ok || !/^\d+$/.test(inv)) return new Response('bad sign', { status: 400 });
       if (!/^\d+(?:\.\d{1,6})?$/.test(out) || !Number.isFinite(Number(out)) || Number(out) !== Number(Number(out).toFixed(2))) return new Response('bad amount', { status: 400 });
       const reg = store(env, '__registry__');
-      const result = await reg.confirmRoboOrder(inv, Number(uid), Number(out).toFixed(2), env.ROBO_TEST === '1');
+      const result = await reg.confirmRoboOrder(inv, Number(out).toFixed(2), env.ROBO_TEST === '1');
       if (result === 'mismatch') return new Response('order mismatch', { status: 400 });
-      if (result === 'confirmed' || result === 'pdf_confirmed') {
+      if (result.status === 'confirmed' || result.status === 'pdf_confirmed') {
+        const uid = result.owner;
         const before = await reg.regGet(+uid);
-        const message = result === 'pdf_confirmed' ? 'Оплата подтверждена. Доступ к PDF-выпискам продлён на 30 дней.' : 'Оплата подтверждена. Голосовые траты и ИИ-повар открыты на весь срок работы сервиса.';
+        const message = result.status === 'pdf_confirmed' ? 'Оплата подтверждена. Доступ к PDF-выпискам продлён на 30 дней.' : 'Оплата подтверждена. Голосовые траты и ИИ-повар открыты на весь срок работы сервиса.';
         await tg(env, 'sendMessage', { chat_id: +uid, text: message, reply_markup: appButton(origin) });
         const adm = await reg.getAdmin();
         if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `💰 Новая оплата: ${(before && before.name) || uid}${before && before.user ? ' @' + before.user : ''} — ${out} ₽ (счёт ${inv})` });
