@@ -2111,6 +2111,19 @@ export default {
       const g = (k) => (f && f.get(k)) || url.searchParams.get(k) || '';
       const out = g('OutSum'), inv = g('InvId'), sig = g('SignatureValue');
       const ok = sig && (await roboMd5(env, `${out}:${inv}:${env.ROBO_PASS2}`)).toLowerCase() === sig.toLowerCase();
+      if (env.ROBO_TEST === '1') {
+        const keys = [...(f?.keys() || []), ...url.searchParams.keys()];
+        console.info('robokassa_test_result', JSON.stringify({
+          method: request.method === 'POST' ? 'POST' : 'other',
+          amountField: keys.find((key) => /^outsum$/i.test(key)) === 'OutSum' ? 'expected' : keys.some((key) => /^outsum$/i.test(key)) ? 'other_case' : 'missing',
+          invoiceField: keys.find((key) => /^invid$/i.test(key)) === 'InvId' ? 'expected' : keys.some((key) => /^invid$/i.test(key)) ? 'other_case' : 'missing',
+          signatureField: keys.find((key) => /^signaturevalue$/i.test(key)) === 'SignatureValue' ? 'expected' : keys.some((key) => /^signaturevalue$/i.test(key)) ? 'other_case' : 'missing',
+          signatureLength: [32, 40, 64, 96, 128].includes(sig.length) ? sig.length : 0,
+          signatureMatches: !!ok,
+          invoiceIsNumeric: /^\d+$/.test(inv),
+          customFields: keys.filter((key) => /^shp_/i.test(key)).length,
+        }));
+      }
       if (!ok || !/^\d+$/.test(inv)) return new Response('bad sign', { status: 400 });
       if (!/^\d+(?:\.\d{1,6})?$/.test(out) || !Number.isFinite(Number(out)) || Number(out) !== Number(Number(out).toFixed(2))) return new Response('bad amount', { status: 400 });
       const reg = store(env, '__registry__');
