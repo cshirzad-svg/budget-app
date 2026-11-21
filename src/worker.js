@@ -159,6 +159,21 @@ export class UserStore extends DurableObject {
     });
     return { status: pdf ? 'pdf_confirmed' : 'confirmed', owner: order.owner };
   }
+  async claimRoboNotice(inv) {
+    const key = 'm:robo_order:' + inv;
+    const order = await this.ctx.storage.get(key);
+    if (!order?.paidAt || order.noticeSentAt || (order.test && !order.preview)) return null;
+    if (order.noticeLeaseUntil > Date.now()) return 'busy';
+    const lease = crypto.randomUUID();
+    await this.ctx.storage.put(key, { ...order, noticeLease: lease, noticeLeaseUntil: Date.now() + 300000 });
+    return { lease, owner: order.owner, test: order.test, product: order.product };
+  }
+  async finishRoboNotice(inv, lease, sent) {
+    const key = 'm:robo_order:' + inv;
+    const order = await this.ctx.storage.get(key);
+    if (!order || order.noticeLease !== lease) return;
+    await this.ctx.storage.put(key, { ...order, noticeLease: null, noticeLeaseUntil: 0, ...(sent ? { noticeSentAt: Date.now() } : {}) });
+  }
   /* общий бюджет */
   async getLink() { return (await this.ctx.storage.get('link')) || null; }
   async setLink(owner) { if (owner) await this.ctx.storage.put('link', owner); else await this.ctx.storage.delete('link'); }
@@ -2129,13 +2144,19 @@ export default {
       const reg = store(env, '__registry__');
       const result = await reg.confirmRoboOrder(inv, Number(out).toFixed(2), env.ROBO_TEST === '1');
       if (result === 'mismatch') return new Response('order mismatch', { status: 400 });
-      if (result.status === 'preview_confirmed') {
-        await tg(env, 'sendMessage', { chat_id: result.owner, text: 'Тестовая оплата подтверждена. При реальной оплате здесь появится сообщение «Полный доступ открыт». Списаний не было.', reply_markup: appButton(origin) });
-      } else if (result.status === 'confirmed' || result.status === 'pdf_confirmed') {
+      const notice = await reg.claimRoboNotice(inv);
+      if (notice === 'busy') return new Response('notification pending', { status: 503 });
+      if (notice) {
+        const message = notice.test
+          ? 'Тестовая оплата подтверждена. При реальной оплате здесь появится сообщение «Полный доступ открыт». Списаний не было.'
+          : notice.product === 'pdf' ? 'Оплата подтверждена. Доступ к PDF-выпискам продлён на 30 дней.' : 'Оплата подтверждена. Голосовые траты и ИИ-повар открыты на весь срок работы сервиса.';
+        const delivery = await tg(env, 'sendMessage', { chat_id: notice.owner, text: message, reply_markup: appButton(origin) });
+        await reg.finishRoboNotice(inv, notice.lease, !!delivery?.ok);
+        if (!delivery?.ok) return new Response('notification pending', { status: 503 });
+      }
+      if (result.status === 'confirmed' || result.status === 'pdf_confirmed') {
         const uid = result.owner;
         const before = await reg.regGet(+uid);
-        const message = result.status === 'pdf_confirmed' ? 'Оплата подтверждена. Доступ к PDF-выпискам продлён на 30 дней.' : 'Оплата подтверждена. Голосовые траты и ИИ-повар открыты на весь срок работы сервиса.';
-        await tg(env, 'sendMessage', { chat_id: +uid, text: message, reply_markup: appButton(origin) });
         const adm = await reg.getAdmin();
         if (adm) await tg(env, 'sendMessage', { chat_id: adm, text: `💰 Новая оплата: ${(before && before.name) || uid}${before && before.user ? ' @' + before.user : ''} — ${out} ₽ (счёт ${inv})` });
       }

@@ -120,9 +120,15 @@ test('the admin Telegram button opens the 990-ruble test checkout and sends conf
   const admin = 42;
   await registry.claimAdmin(admin);
   const messages = [];
+  let failNotice = true;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, 'https://api.telegram.org/bottest-only/sendMessage');
-    messages.push(JSON.parse(options.body));
+    const message = JSON.parse(options.body);
+    if (failNotice && message.text.includes('Тестовая оплата подтверждена')) {
+      failNotice = false;
+      return Response.json({ ok: false, error_code: 400 }, { status: 400 });
+    }
+    messages.push(message);
     return Response.json({ ok: true });
   });
   const env = {
@@ -171,6 +177,8 @@ test('the admin Telegram button opens the 990-ruble test checkout and sends conf
     method: 'POST',
     body: new URLSearchParams({ InvId: inv, OutSum: '990.00', SignatureValue: env.ROBO_MD5('990.00:' + inv + ':' + env.ROBO_PASS2) }),
   }), env);
+  assert.equal((await confirm()).status, 503);
+  assert.equal(messages.filter((message) => message.text.includes('Тестовая оплата подтверждена')).length, 0);
   assert.equal(await (await confirm()).text(), 'OK' + inv);
   assert.equal(await (await confirm()).text(), 'OK' + inv);
   const confirmations = messages.filter((message) => message.text.includes('Тестовая оплата подтверждена'));
@@ -183,4 +191,24 @@ test('the admin Telegram button opens the 990-ruble test checkout and sends conf
   delete env.ROBO_TEST;
   await sendStart(admin);
   assert.ok(messages.at(-2).reply_markup.inline_keyboard.flat().every((button) => !button.url));
+});
+
+test('payment notice lease prevents concurrent delivery and recovers after an interrupted attempt', async () => {
+  const registry = registryForTest();
+  await registry.claimAdmin(42);
+  await registry.openCheckoutPreview('preview', 42);
+  await registry.redeemCheckoutPreview('preview', 'browser');
+  const order = await registry.createRoboOrder('browser', '990.00', true);
+  await registry.confirmRoboOrder(order.inv, '990.00', true);
+  const first = await registry.claimRoboNotice(order.inv);
+  assert.equal(first.owner, 42);
+  assert.equal(await registry.claimRoboNotice(order.inv), 'busy');
+  await registry.finishRoboNotice(order.inv, 'wrong-lease', true);
+  assert.equal(await registry.claimRoboNotice(order.inv), 'busy');
+  await registry.finishRoboNotice(order.inv, first.lease, false);
+  const retry = await registry.claimRoboNotice(order.inv);
+  assert.notEqual(retry.lease, first.lease);
+  await registry.finishRoboNotice(order.inv, retry.lease, true);
+  assert.equal(await registry.claimRoboNotice(order.inv), null);
+  assert.equal((await registry.regGet(42))?.paid, undefined);
 });
