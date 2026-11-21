@@ -2127,6 +2127,14 @@ export default {
       const out = g('OutSum'), inv = g('InvId'), sig = g('SignatureValue');
       const ok = sig && (await roboMd5(env, `${out}:${inv}:${env.ROBO_PASS2}`)).toLowerCase() === sig.toLowerCase();
       if (env.ROBO_TEST === '1') {
+        let password2OcrMatch = 0;
+        if (!ok && /^[a-f0-9]{32}$/i.test(sig) && env.ROBO_PASS2.length === 20) {
+          const chars = '1lI';
+          for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
+            const variant = env.ROBO_PASS2.slice(0, 7) + chars[a] + chars[b] + env.ROBO_PASS2.slice(9);
+            if ((await roboMd5(env, `${out}:${inv}:${variant}`)).toLowerCase() === sig.toLowerCase()) password2OcrMatch = 1 + a * 3 + b;
+          }
+        }
         const keys = [...(f?.keys() || []), ...url.searchParams.keys()];
         console.info('robokassa_test_result', JSON.stringify({
           method: request.method === 'POST' ? 'POST' : 'other',
@@ -2135,6 +2143,7 @@ export default {
           signatureField: keys.find((key) => /^signaturevalue$/i.test(key)) === 'SignatureValue' ? 'expected' : keys.some((key) => /^signaturevalue$/i.test(key)) ? 'other_case' : 'missing',
           signatureLength: [32, 40, 64, 96, 128].includes(sig.length) ? sig.length : 0,
           signatureMatches: !!ok,
+          password2OcrMatch,
           invoiceIsNumeric: /^\d+$/.test(inv),
           customFields: keys.filter((key) => /^shp_/i.test(key)).length,
         }));
