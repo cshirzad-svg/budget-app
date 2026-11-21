@@ -2126,28 +2126,6 @@ export default {
       const g = (k) => (f && f.get(k)) || url.searchParams.get(k) || '';
       const out = g('OutSum'), inv = g('InvId'), sig = g('SignatureValue');
       const ok = sig && (await roboMd5(env, `${out}:${inv}:${env.ROBO_PASS2}`)).toLowerCase() === sig.toLowerCase();
-      if (env.ROBO_TEST === '1') {
-        let password2OcrMatch = 0;
-        if (!ok && /^[a-f0-9]{32}$/i.test(sig) && env.ROBO_PASS2.length === 20) {
-          const chars = '1lI';
-          for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
-            const variant = env.ROBO_PASS2.slice(0, 7) + chars[a] + chars[b] + env.ROBO_PASS2.slice(9);
-            if ((await roboMd5(env, `${out}:${inv}:${variant}`)).toLowerCase() === sig.toLowerCase()) password2OcrMatch = 1 + a * 3 + b;
-          }
-        }
-        const keys = [...(f?.keys() || []), ...url.searchParams.keys()];
-        console.info('robokassa_test_result', JSON.stringify({
-          method: request.method === 'POST' ? 'POST' : 'other',
-          amountField: keys.find((key) => /^outsum$/i.test(key)) === 'OutSum' ? 'expected' : keys.some((key) => /^outsum$/i.test(key)) ? 'other_case' : 'missing',
-          invoiceField: keys.find((key) => /^invid$/i.test(key)) === 'InvId' ? 'expected' : keys.some((key) => /^invid$/i.test(key)) ? 'other_case' : 'missing',
-          signatureField: keys.find((key) => /^signaturevalue$/i.test(key)) === 'SignatureValue' ? 'expected' : keys.some((key) => /^signaturevalue$/i.test(key)) ? 'other_case' : 'missing',
-          signatureLength: [32, 40, 64, 96, 128].includes(sig.length) ? sig.length : 0,
-          signatureMatches: !!ok,
-          password2OcrMatch,
-          invoiceIsNumeric: /^\d+$/.test(inv),
-          customFields: keys.filter((key) => /^shp_/i.test(key)).length,
-        }));
-      }
       if (!ok || !/^\d+$/.test(inv)) return new Response('bad sign', { status: 400 });
       if (!/^\d+(?:\.\d{1,6})?$/.test(out) || !Number.isFinite(Number(out)) || Number(out) !== Number(Number(out).toFixed(2))) return new Response('bad amount', { status: 400 });
       const reg = store(env, '__registry__');
