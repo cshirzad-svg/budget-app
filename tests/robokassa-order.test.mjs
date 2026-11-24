@@ -272,7 +272,7 @@ test('live bot purchase opens the correct tariff, signs its receipt and grants f
   assert.match(fullButton.text, /990/);
   await purchase(fullButton, 'full', '990.00');
   assert.equal((await registry.regGet(42)).paid, true);
-  assert.ok(messages.some((m) => m.chat_id === 42 && m.text.includes('Голосовые траты и ИИ-повар открыты')));
+  assert.ok(messages.some((m) => m.chat_id === 42 && m.text.includes('Полный доступ открыт')));
   const pdfButton = await start();
   assert.match(pdfButton.text, /PDF.*299/);
   await purchase(pdfButton, 'pdf', '299.00');

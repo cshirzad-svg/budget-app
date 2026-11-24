@@ -545,7 +545,7 @@ html.web body{overflow:hidden}
     <h1>Бюджет, который ведётся сам — прямо в Telegram</h1>
     <p class="ld-sub">Пишешь траты боту как другу: «кофе 300», «такси 500», можно голосом или скрином из банка. Он раскладывает деньги по конвертам и говорит, сколько можно потратить сегодня.</p>
     <div class="ld-cta"><a class="ld-btn" href="https://t.me/konverty_budget_bot">🚀 Попробовать бесплатно</a><button class="ld-btn gh" type="button" onclick="document.documentElement.classList.remove('web')">👀 Посмотреть приложение</button></div>
-    <div class="ld-note">Текстовый бюджет бесплатный. Голос и ИИ-повар — {{PRICE}} ₽ одним платежом. PDF — дополнение к полному доступу.</div>
+    <div class="ld-note">Текстовый бюджет и PDF — 3 дня бесплатно. Затем полный доступ — {{PRICE}} ₽ одним платежом: текст, голос и ИИ-повар. PDF — отдельное дополнение.</div>
    </div>
    <video class="ld-vid" poster="/promo/ad-3.jpg" src="/promo/ad-3.mp4" autoplay muted loop playsinline preload="metadata"></video>
   </div>
@@ -564,8 +564,8 @@ html.web body{overflow:hidden}
 
   <h2>Стоимость</h2>
   <div class="ld-price">
-   <div class="ld-card"><span>Пробный период</span><div class="ld-big">0 ₽</div><span>Текстовые траты бесплатно. PDF-выписки доступны первые 3 дня.</span></div>
-   <div class="ld-card"><span>Полный доступ</span><div class="ld-big">{{PRICE}} ₽</div><span>Голосовые траты и ИИ-повар на весь срок работы сервиса. Один платёж.</span><p><a class="ld-btn" href="/checkout">Открыть полный доступ</a></p></div>
+   <div class="ld-card"><span>Пробный период</span><div class="ld-big">0 ₽</div><span>Текстовый учёт и PDF-выписки доступны бесплатно первые 3 дня. Голос и ИИ-повар — после оплаты.</span></div>
+   <div class="ld-card"><span>Полный доступ</span><div class="ld-big">{{PRICE}} ₽</div><span>Текстовый бюджет, голосовые траты и ИИ-повар на весь срок работы сервиса. Один платёж. PDF после пробного периода — отдельно.</span><p><a class="ld-btn" href="/checkout">Открыть полный доступ</a></p></div>
   </div>
 
   <h2>Как купить</h2>
@@ -844,7 +844,7 @@ const tg=window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData!==undefined?
 const inTG=!!(tg&&tg.platform&&tg.platform!=='unknown');
 const SKEY='budget-v2', OLDKEY='envelope-demo-v6';
 const useServer=inTG&&!!tg.initData&&location.protocol==='https:'&&!location.hostname.endsWith('github.io');
-const api=(method,body)=>fetch('/api/state',{method,headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:body?JSON.stringify(body):undefined}).then(r=>r.ok?r.json():null);
+const api=(method,body)=>fetch('/api/state',{method,headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:body?JSON.stringify(body):undefined}).then(r=>r.json()).then(r=>{if(r&&r.access)window.ACCESS=r.access;if(r&&r.error==='trial_over'){try{renderAccess();toast('Три бесплатных дня закончились. Нужен полный доступ.')}catch(e){}}return r});
 let deletedIds=[];
 const server={t:null,set(str){if(!useServer)return;clearTimeout(this.t);this.t=setTimeout(()=>{const d=deletedIds.slice();api('PUT',{state:JSON.parse(str),deleted:d}).then(r=>{if(r&&r.ok)deletedIds=deletedIds.filter(x=>!d.includes(x))}).catch(()=>{})},700)}};
 const haptic=(t)=>{try{if(!inTG)return;if(t==='ok')tg.HapticFeedback.notificationOccurred('success');else tg.HapticFeedback.impactOccurred('light')}catch(e){}};
@@ -934,7 +934,9 @@ const $=id=>document.getElementById(id);
 const num=id=>Math.max(0,parseFloat($(id).value)||0);
 const toast=t=>{const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),2000)};
 const TRANSIENT=new Set(['spent','prev','all','p','srv']);
-function save(){if(S.demo)return;S.rates=RATES;S.tz=-new Date().getTimezoneOffset();const str=JSON.stringify(S,(k,v)=>TRANSIENT.has(k)?undefined:v);lsSet(SKEY,str);cloud.set(str);server.set(str)}
+function accessExpired(){const A=window.ACCESS;return useServer&&A&&!A.paid&&Date.now()>=A.trialEnd}
+let readonlyState=null;
+function save(){if(S.demo)return;if(accessExpired()){toast('Три бесплатных дня закончились. Нужен полный доступ.');return}S.rates=RATES;S.tz=-new Date().getTimezoneOffset();const str=JSON.stringify(S,(k,v)=>TRANSIENT.has(k)?undefined:v);lsSet(SKEY,str);cloud.set(str);server.set(str)}
 
 /* ---------- периоды ---------- */
 function periodOf(off,sd=S?S.start:1){
@@ -979,6 +981,7 @@ function fillSelects(){
 /* ---------- расчёт и рендер ---------- */
 let charts={};
 function render(){
+  if(accessExpired()&&readonlyState){S=JSON.parse(readonlyState);deletedIds=[]}else readonlyState=JSON.stringify(S);
   try{checkQuest()}catch(e){}
   const P=periodOf(OFF), PP=periodOf(OFF-1), simple=S.mode==='simple';
   const txP=S.tx.filter(t=>inP(t,P)), txPP=S.tx.filter(t=>inP(t,PP)&&dayIdx(t,PP)<=P.elapsed);
@@ -1332,16 +1335,17 @@ function badgesSheet(){const {st,ids,ctx}=earned(),xp=S.tx.length+15*ids.length;
 $('gameCard').addEventListener('click',e=>{if(e.target.closest('.help'))return;badgesSheet()});
 
 /* ---------- доступ, общий бюджет, итоги ---------- */
-function buyFull(){
-  tg.openLink('https://konverty.app/offer');
+async function buyFull(){
+  if(!useServer){window.open('https://konverty.app/checkout','_blank');return}
+  try{const j=await fetch('/api/checkout',{method:'POST',headers:{'X-Init-Data':tg.initData}}).then(r=>r.json());if(j&&j.ok)tg.openLink(j.url);else toast('Не удалось открыть оплату. Напиши боту /start.')}catch(e){toast('Нет связи. Попробуй ещё раз.')}
 }
 function teamCall(body){return fetch('/api/team',{method:'POST',headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(()=>({ok:false}))}
 function renderAccess(){
   const A=window.ACCESS;$('accCard').hidden=$('teamCard').hidden=!(useServer&&A);if(!A)return;
   const pdfStatus=A.pdfUntil>Date.now()?`PDF оплачен до ${new Date(A.pdfUntil).toLocaleDateString('ru-RU')}.`:A.pdf?'PDF доступен.':'PDF — 299 ₽ за 30 дней.';
-  $('accTxt').textContent=(A.paid?'Голос и ИИ-повар доступны. ':'Текстовый учёт бесплатный. ')+pdfStatus;
-  $('accBadge').textContent=A.paid?'💎 Полный':'Бесплатный';
-  $('accPay').hidden=false;$('accPay').textContent='Условия доступа';
+  $('accTxt').textContent=(A.paid?'Полный доступ открыт: текст, голос и ИИ-повар. ':!accessExpired()?`Текст и PDF бесплатно до ${new Date(A.trialEnd).toLocaleString('ru-RU')}. Затем полный доступ — ${A.price||990} ₽ одним платежом. `:'Три бесплатных дня закончились. Новые записи доступны после оплаты. Сохранённые данные можно посмотреть и выгрузить. ')+pdfStatus;
+  $('accBadge').textContent=A.paid?'💎 Полный':!accessExpired()?'🎁 Пробные 3 дня':'Нужна оплата';
+  $('accPay').hidden=false;$('accPay').textContent=A.paid?'PDF · 299 ₽ на 30 дней':`Открыть полный доступ · ${A.price||990} ₽`;
   const others=(A.members||[]).filter(m=>m.id!==A.me);
   if(A.isOwner&&!others.length)$('teamBody').innerHTML=`<p class="hint">Пригласи партнёра, и вы будете вести один бюджет на двоих. Каждый пишет траты своему боту, всё сходится здесь.</p><button type="button" class="btn" id="tmInv">💌 Пригласить партнёра</button><div id="tmLink"></div>`;
   else if(A.isOwner)$('teamBody').innerHTML=`<p>👫 Вместе с: <b>${others.map(m=>esc(m.name||'партнёр')).join(', ')}</b></p><button type="button" class="btn danger" id="tmRm" data-id="${others[0].id}">Убрать из бюджета</button>`;
@@ -1799,13 +1803,13 @@ function renderFood(){
 let CHEF_BUSY=false;
 function aiCall(body){if(!useServer)return Promise.resolve({ok:false,error:'nosrv'});
   return fetch('/api/ai',{method:'POST',headers:{'X-Init-Data':tg.initData,'content-type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(()=>({ok:false,error:'net'}))}
-const AIERR={limit:'😴 На сегодня лимит запросов к ИИ закончился. Завтра продолжим!',consent_required:'Для ИИ отправь боту /consent и подтверди согласие, затем повтори запрос.',nosrv:'ИИ-повар работает внутри Telegram',no_ai:'ИИ-повар пока недоступен',ai:'😕 ИИ не справился, попробуй ещё раз или сформулируй иначе',net:'😕 Нет связи, попробуй ещё раз'};
+const AIERR={trial_over:'Три бесплатных дня закончились. Открой полный доступ.',limit:'😴 На сегодня лимит запросов к ИИ закончился. Завтра продолжим!',consent_required:'Для ИИ отправь боту /consent и подтверди согласие, затем повтори запрос.',nosrv:'ИИ-повар работает внутри Telegram',no_ai:'ИИ-повар пока недоступен',ai:'😕 ИИ не справился, попробуй ещё раз или сформулируй иначе',net:'😕 Нет связи, попробуй ещё раз'};
 function savePrefs(){const prefs=$('prefIn').value.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
   const old=((S.srv&&S.srv.prefs)||[]).join(',');if(prefs.join(',')===old)return Promise.resolve();
   S.srv={...(S.srv||{}),prefs};return aiCall({act:'prefs',prefs})}
 $('prefIn').addEventListener('change',()=>{savePrefs().then(()=>toast('👌 Запомнил'))});
 function chefPay(){
-  sheet('👨‍🍳 ИИ-повар — в полной версии','Меню на неделю под твой бюджет и вкусы, список покупок, замена блюд и цена корзины.<br><br>Голосовые траты и ИИ-повар открываются одним платежом. Доступ к PDF оформляется отдельно.');
+  sheet('👨‍🍳 ИИ-повар — в полной версии','Меню на неделю под твой бюджет и вкусы, список покупок, замена блюд и цена корзины.<br><br>Текстовый бюджет, голосовые траты и ИИ-повар открываются одним платежом. Доступ к PDF оформляется отдельно.');
   setTimeout(()=>{const s=document.querySelector('.sheet');if(!s||s.querySelector('#chefBuy'))return;const b=document.createElement('button');b.type='button';b.className='btn';b.id='chefBuy';b.textContent=window.ACCESS&&ACCESS.pay?`💎 Открыть за ${ACCESS.price||990} ₽`:'💳 Оплата через Robokassa готовится';b.onclick=()=>{const bg=s.closest('.sheet-bg');if(bg)bg.remove();buyFull()};const last=s.querySelector('.btn');last?s.insertBefore(b,last):s.appendChild(b)},0)}
 const chefLocked=()=>useServer&&window.ACCESS&&!ACCESS.paid;
 function runChef(prompt){
