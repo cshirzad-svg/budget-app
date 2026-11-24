@@ -12,3 +12,5 @@
 .terms { display: flex; align-items: baseline; gap: 8px; margin: 20px 0 14px; font-size: 14px; }
 .terms input { accent-color: var(--accent); }
 #checkout-status { margin: 10px 0 0; }
+.plan-label { display: block; font-weight: 600; margin-bottom: 8px; }
+#pdfMonths { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; }

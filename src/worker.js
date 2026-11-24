@@ -75,6 +75,7 @@ export class UserStore extends DurableObject {
   async dump() { return Object.fromEntries(await this.ctx.storage.list()); }
   async getAdmin() { return (await this.ctx.storage.get('admin')) || null; }
   async regGet(uid) { return (await this.ctx.storage.get('u:' + uid)) || null; }
+  async serviceNotice(uid) { return (await this.ctx.storage.get('trial-policy-8:' + uid)) || null; }
   async ensureTrialPolicy(now = Date.now()) {
     let start = await this.ctx.storage.get('m:trial_policy:8');
     if (!start) { start = now; await this.ctx.storage.put('m:trial_policy:8', start); }
@@ -91,7 +92,8 @@ export class UserStore extends DurableObject {
     }
     const trial = now < trialEnd;
     const pdfUntil = user.pdfUntil || 0;
-    return { paid, active: paid || trial, trialEnd, pdfUntil, pdf: (paid && !user.roboLifetime) || trial || (paid && now < pdfUntil) };
+    const pdfFree = paid && !user.roboLifetime;
+    return { paid, active: paid || trial, trialEnd, pdfUntil, pdfFree, pdf: pdfFree || trial || (paid && now < pdfUntil) };
   }
   async meta(k, v) { if (v === undefined) return (await this.ctx.storage.get('m:' + k)) ?? null; if (v === null) await this.ctx.storage.delete('m:' + k); else await this.ctx.storage.put('m:' + k, v); return v; }
   async openCheckout(id) {
@@ -111,8 +113,8 @@ export class UserStore extends DurableObject {
     const storage = this.ctx.storage;
     const key = 'checkout:' + id;
     const session = await storage.get(key);
-    if (!session?.purchase || session.redeemed || session.used || session.expires <= Date.now()) return false;
-    await storage.put({ [key]: { expires: session.expires, used: true }, ['checkout:' + browserId]: { ...session, expires: Date.now() + CHECKOUT_TTL, redeemed: true } });
+    if (!session?.purchase || session.used || session.expires <= Date.now()) return false;
+    await storage.put('checkout:' + browserId, { ...session, expires: Date.now() + CHECKOUT_TTL, redeemed: true });
     return true;
   }
   async redeemCheckoutPreview(id, browserId) {
@@ -140,7 +142,8 @@ export class UserStore extends DurableObject {
     if (!session.uid) return 'pending';
     const owner = (await storage.get('u:' + session.uid))?.link || session.uid;
     const account = await this.regGet(owner);
-    return account?.paid || account?.pdfUntil || (await this.getAdmin()) === owner ? 'pdf' : 'full';
+    if ((account?.paid || account?.gift || (await this.getAdmin()) === owner) && !account?.roboLifetime) return 'included';
+    return account?.paid || account?.gift || account?.pdfUntil || (await this.getAdmin()) === owner ? 'pdf' : 'full';
   }
   async pruneCheckouts() {
     const storage = this.ctx.storage;
@@ -149,8 +152,10 @@ export class UserStore extends DurableObject {
     const expired = [...sessions].filter(([, session]) => session.expires <= now).map(([key]) => key);
     if (expired.length) await storage.delete(expired);
   }
-  async createRoboOrder(id, sum, test, product = 'full') {
+  async createRoboOrder(id, sum, test, product = 'full', months = 1) {
     const storage = this.ctx.storage;
+    const plan = Object.hasOwn(PDF_PLANS, months) ? PDF_PLANS[months] : null;
+    if (product === 'pdf' && (!plan || sum !== plan.price.toFixed(2))) return null;
     const key = 'checkout:' + id;
     const session = await storage.get(key);
     if (!session?.uid || session.used || session.expires <= Date.now()) return null;
@@ -158,10 +163,11 @@ export class UserStore extends DurableObject {
     if (session.preview && (!session.redeemed || !test || product !== 'full' || uid !== await this.getAdmin())) return null;
     const owner = session.preview ? uid : (await storage.get('u:' + uid))?.link || uid;
     const account = await storage.get('u:' + owner);
-    const hasFull = account?.paid || (await this.getAdmin()) === owner;
+    const hasFull = account?.paid || account?.gift || (await this.getAdmin()) === owner;
+    if (!session.preview && product === 'pdf' && hasFull && !account?.roboLifetime) return null;
     if (!session.preview && (product === 'pdf' ? !hasFull && !account?.pdfUntil : hasFull)) return null;
     const inv = ((await storage.get('m:inv_seq')) || 1000) + 1;
-    await storage.put({ [key]: { expires: session.expires, used: true }, 'm:inv_seq': inv, ['m:robo_order:' + inv]: { owner, sum, test, product, preview: !!session.preview, offerRevision: 8, createdAt: Date.now() } });
+    await storage.put({ [key]: { expires: session.expires, used: true }, 'm:inv_seq': inv, ['m:robo_order:' + inv]: { owner, sum, test, product, ...(product === 'pdf' ? { pdfMonths: Number(months), pdfDays: plan.days } : {}), preview: !!session.preview, offerRevision: 9, createdAt: Date.now() } });
     return { inv };
   }
   async confirmRoboOrder(inv, sum, test) {
@@ -179,8 +185,10 @@ export class UserStore extends DurableObject {
     const user = (await storage.get(userKey)) || {};
     const paidAt = Date.now();
     const pdf = order.product === 'pdf';
+    const days = order.pdfDays || 30;
+    if (pdf && ![30, 90, 180, 360].includes(days)) return 'mismatch';
     const entitlement = pdf
-      ? { pdfUntil: Math.max(paidAt, user.pdfUntil || 0) + 30 * 864e5 }
+      ? { pdfUntil: Math.max(paidAt, user.pdfUntil || 0) + days * 864e5 }
       : { paid: true, roboLifetime: true, paidAt, paidRub: Number(sum), inv };
     await storage.put({
       [key]: { ...order, paidAt },
@@ -195,7 +203,7 @@ export class UserStore extends DurableObject {
     if (order.noticeLeaseUntil > Date.now()) return 'busy';
     const lease = crypto.randomUUID();
     await this.ctx.storage.put(key, { ...order, noticeLease: lease, noticeLeaseUntil: Date.now() + 300000 });
-    return { lease, owner: order.owner, test: order.test, product: order.product };
+    return { lease, owner: order.owner, test: order.test, product: order.product, days: order.pdfDays || 30 };
   }
   async finishRoboNotice(inv, lease, sent) {
     const key = 'm:robo_order:' + inv;
@@ -1343,18 +1351,19 @@ const checkoutSetCookie = (secret) =>
   CHECKOUT_COOKIE + '=' + secret + '; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=' + (CHECKOUT_TTL / 1000);
 function checkoutPage({ enabled, test, product, link, price }) {
   const pdf = product === 'pdf';
-  const title = pdf ? 'PDF-выписки' : 'Полный доступ';
+  const title = product === 'included' ? 'Доступ уже открыт' : pdf ? 'PDF-выписки' : 'Полный доступ';
   const amount = pdf ? PDF_PRICE : price;
   const details = pdf ? 'Распознавание банковских выписок на 30 дней. Продление вручную.' : 'Текстовый бюджет, голосовые траты и ИИ-повар на весь срок работы сервиса. PDF подключается отдельно.';
-  const actions = !enabled ? '<p>Оплата готовится.</p>' : link
+  const actions = product === 'included' ? '<p>PDF уже включён в ранее выданный тебе доступ. Покупать его не нужно.</p><a class="primary" href="https://t.me/konverty_budget_bot">Открыть бот</a>' : !enabled ? '<p>Оплата готовится.</p>' : link
     ? `<a class="primary" href="${link}" target="_blank" rel="noopener noreferrer">Подтвердить в Telegram</a>
       <p id="checkout-status" class="meta" role="status">Подтверди аккаунт в боте и вернись в эту вкладку.</p>
       <noscript><a href="/checkout">Проверить подтверждение</a></noscript>
       <script defer src="/checkout.js"></script>`
-    : `<form method="post" action="/checkout">
+    : `<form method="post" action="/checkout" data-test="${test ? '1' : '0'}">
         <input type="hidden" name="product" value="${product}">
+        ${pdf ? `<label class="plan-label" for="pdfMonths">Срок доступа к PDF</label><select id="pdfMonths" name="months">${Object.entries(PDF_PLANS).map(([months, plan]) => `<option value="${months}" data-price="${plan.price}" data-days="${plan.days}">${months} ${Number(months) === 1 ? 'месяц' : Number(months) === 3 ? 'месяца' : 'месяцев'} (${plan.days} дней) — ${plan.price.toLocaleString('ru-RU')} ₽</option>`).join('')}</select><script defer src="/checkout-plans.js"></script>` : ''}
         <label class="terms"><input type="checkbox" name="offer" value="yes" required> <span>Принимаю <a href="/offer" target="_blank" rel="noopener">условия оферты</a></span></label>
-        <button class="primary" type="submit">${test ? 'Перейти к тестовой оплате' : 'Оплатить ' + amount + ' ₽'}</button>
+        <button id="checkoutSubmit" class="primary" type="submit">${test ? 'Перейти к тестовой оплате' : 'Оплатить ' + amount + ' ₽'}</button>
       </form>`;
   return `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1362,8 +1371,7 @@ function checkoutPage({ enabled, test, product, link, price }) {
 <body><main class="checkout"><nav><a href="/">← Бюджет в конвертах</a></nav>
 <section class="doc purchase">
   <h1>${title}</h1>
-  <p class="price">${amount} ₽ <span>${pdf ? 'за 30 дней' : 'одним платежом'}</span></p>
-  <p class="details">${details}</p>
+  ${product === 'included' ? '' : `<p class="price"><b id="checkoutAmount">${amount} ₽</b> <span id="checkoutPeriod">${pdf ? 'за 30 дней' : 'одним платежом'}</span></p><p id="checkoutDetails" class="details">${details}</p>`}
   ${test ? '<p class="notice">Тестовая оплата. Списания и выдачи доступа не будет.</p>' : ''}
   ${actions}
 </section>
@@ -1376,17 +1384,19 @@ const roboConfigured = (env) => (env.ROBO_TEST === '1' || (ROBO_LIVE_RELEASE && 
 const payOn = (env) => env.ROBO_TEST !== '1' && roboConfigured(env);
 const priceRub = (env) => Math.max(1, parseInt(env.PRICE_RUB || '990', 10) || 990);
 const PDF_PRICE = 299;
+const PDF_PLANS = Object.freeze({ 1: { price: PDF_PRICE, days: 30 }, 3: { price: 900, days: 90 }, 6: { price: 1800, days: 180 }, 12: { price: 3600, days: 360 } });
 async function roboMd5(env, value) {
   if (env.ROBO_MD5) return env.ROBO_MD5(value);
   return hex(await crypto.subtle.digest('MD5', new TextEncoder().encode(value)));
 }
-async function payLink(env, { inv }, sum, product) {
+async function payLink(env, { inv }, sum, product, months = 1) {
+  const days = PDF_PLANS[months]?.days || 30;
   const receipt = encodeURIComponent(JSON.stringify({ items: [{
-    name: product === 'pdf' ? 'Бюджет в конвертах: распознавание PDF-выписок, 30 дней' : 'Бюджет в конвертах: текст, голос и ИИ-повар, полный доступ',
+    name: product === 'pdf' ? 'Бюджет в конвертах: распознавание PDF-выписок, ' + days + ' дней' : 'Бюджет в конвертах: текст, голос и ИИ-повар, полный доступ',
     quantity: 1, sum: Number(sum), tax: 'none', payment_method: 'full_payment', payment_object: 'service',
   }] }));
   const sig = await roboMd5(env, `${env.ROBO_LOGIN}:${sum}:${inv}:${receipt}:${roboPass1(env)}`);
-  const q = new URLSearchParams({ MerchantLogin: env.ROBO_LOGIN, OutSum: sum, InvId: String(inv), Description: product === 'pdf' ? 'Бюджет в конвертах — PDF-выписки на 30 дней' : 'Бюджет в конвертах — голос и ИИ-повар', SignatureValue: sig, Culture: 'ru' });
+  const q = new URLSearchParams({ MerchantLogin: env.ROBO_LOGIN, OutSum: sum, InvId: String(inv), Description: product === 'pdf' ? 'Бюджет в конвертах — PDF-выписки на ' + days + ' дней' : 'Бюджет в конвертах — голос и ИИ-повар', SignatureValue: sig, Culture: 'ru' });
   q.set('Receipt', receipt);
   if (env.ROBO_TEST === '1') q.set('IsTest', '1');
   return 'https://auth.robokassa.ru/Merchant/Index.aspx?' + q.toString();
@@ -1398,8 +1408,9 @@ async function payButtons(env, owner) {
     const secret = newCheckoutSecret();
     await reg.openCheckoutPurchase(await checkoutId(secret), owner);
     const account = await reg.regGet(owner);
-    const full = account?.paid || owner === await reg.getAdmin();
-    rows.push([{ text: full ? '📄 PDF-выписки · 299 ₽ / 30 дней' : '💎 Полный доступ · ' + priceRub(env) + ' ₽', url: (env.ORIGIN || 'https://konverty.app').replace(/\/$/, '') + '/checkout/open/' + secret }]);
+    const full = account?.paid || account?.gift || owner === await reg.getAdmin();
+    if (full && !account?.roboLifetime) rows.push([{ text: '📄 PDF уже включён в твой доступ', web_app: { url: (env.ORIGIN || 'https://konverty.app').replace(/\/$/, '') + '/' } }]);
+    else rows.push([{ text: full ? (account?.pdfUntil > Date.now() ? '🔄 Продлить PDF · от 299 ₽' : '📄 Подключить PDF · от 299 ₽') : '💎 Оплатить полный доступ · ' + priceRub(env) + ' ₽', url: (env.ORIGIN || 'https://konverty.app').replace(/\/$/, '') + '/checkout/open/' + secret }]);
   }
   rows.push([{ text: '📄 Условия и возврат', url: 'https://konverty.app/offer' }]);
   return { inline_keyboard: rows };
@@ -2194,10 +2205,12 @@ export default {
       if (!secret || form?.get('offer') !== 'yes') return Response.redirect(url.origin + '/checkout', 303);
       const product = form.get('product');
       if (product !== 'full' && product !== 'pdf') return new Response('Тариф недоступен.', { status: 400 });
-      const sum = (product === 'pdf' ? PDF_PRICE : priceRub(env)).toFixed(2);
-      const order = await store(env, '__registry__').createRoboOrder(await checkoutId(secret), sum, env.ROBO_TEST === '1', product);
+      const months = product === 'pdf' ? Number(form.get('months') || 1) : 1;
+      if (product === 'pdf' && !Object.hasOwn(PDF_PLANS, months)) return new Response('Срок недоступен.', { status: 400 });
+      const sum = (product === 'pdf' ? PDF_PLANS[months].price : priceRub(env)).toFixed(2);
+      const order = await store(env, '__registry__').createRoboOrder(await checkoutId(secret), sum, env.ROBO_TEST === '1', product, months);
       if (!order) return Response.redirect(url.origin + '/checkout', 303);
-      return Response.redirect(await payLink(env, order, sum, product), 303);
+      return Response.redirect(await payLink(env, order, sum, product, months), 303);
     }
     if (url.pathname === '/pay/result') {
       if (!roboConfigured(env)) return new Response('off', { status: 404 });
@@ -2215,10 +2228,18 @@ export default {
       if (notice) {
         const message = notice.test
           ? 'Тестовая оплата подтверждена. При реальной оплате здесь появится сообщение «Полный доступ открыт». Списаний не было.'
-          : notice.product === 'pdf' ? 'Оплата подтверждена. Доступ к PDF-выпискам продлён на 30 дней.' : 'Оплата подтверждена. Полный доступ открыт: текстовый бюджет, голосовые траты и ИИ-повар — на весь срок работы сервиса.';
-        const delivery = await tg(env, 'sendMessage', { chat_id: notice.owner, text: message, reply_markup: appButton(origin) });
+          : notice.product === 'pdf' ? 'Оплата подтверждена. Доступ к PDF-выпискам продлён на ' + notice.days + ' дней.' : 'Оплата подтверждена. Полный доступ открыт: текстовый бюджет, голосовые траты и ИИ-повар — на весь срок работы сервиса.';
+        const keyboard = appButton(origin);
+        if (!notice.test) keyboard.inline_keyboard.push(...(await payButtons(env, notice.owner)).inline_keyboard.slice(0, 1));
+        const delivery = await tg(env, 'sendMessage', { chat_id: notice.owner, text: message, reply_markup: keyboard });
         await reg.finishRoboNotice(inv, notice.lease, !!delivery?.ok);
         if (!delivery?.ok) return new Response('notification pending', { status: 503 });
+        if (!notice.test) {
+          const previous = await store(env, '__service_notices__').serviceNotice(notice.owner);
+          if (previous?.state === 'sent' && previous.messageId) {
+            await tg(env, 'editMessageReplyMarkup', { chat_id: notice.owner, message_id: previous.messageId, reply_markup: keyboard });
+          }
+        }
       }
       if (result.status === 'confirmed' || result.status === 'pdf_confirmed') {
         const uid = result.owner;

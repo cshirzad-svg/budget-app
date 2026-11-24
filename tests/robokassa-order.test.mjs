@@ -75,7 +75,7 @@ test('website checkout confirms the browser in Telegram and exposes only the app
   assert.equal(await signed.text(), 'OK' + inv);
   assert.equal(await registry.regGet(42), null);
 
-  await registry.regUpdate(42, { paid: true });
+  await registry.regUpdate(42, { paid: true, roboLifetime: true });
   const next = await worker.fetch(request(checkout), env);
   const nextCookie = next.headers.get('set-cookie').split(';')[0];
   const nextId = (await next.text()).match(/start=buy_([a-f0-9]{48})/)[1];
@@ -243,7 +243,7 @@ test('live bot purchase opens the correct tariff, signs its receipt and grants f
   const purchase = async (button, product, sum) => {
     const opened = await worker.fetch(new Request(button.url), env);
     assert.equal(opened.status, 303);
-    assert.equal((await worker.fetch(new Request(button.url), env)).status, 404);
+    assert.equal((await worker.fetch(new Request(button.url), env)).status, 303);
     const cookie = opened.headers.get('set-cookie').split(';')[0];
     const page = await (await worker.fetch(new Request(origin + '/checkout', { headers: { cookie } }), env)).text();
     assert.match(page, new RegExp(`name="product" value="${product}"`));
@@ -273,9 +273,57 @@ test('live bot purchase opens the correct tariff, signs its receipt and grants f
   await purchase(fullButton, 'full', '990.00');
   assert.equal((await registry.regGet(42)).paid, true);
   assert.ok(messages.some((m) => m.chat_id === 42 && m.text.includes('Полный доступ открыт')));
+  assert.ok(messages.find((m) => m.chat_id === 42 && m.text.includes('Полный доступ открыт')).reply_markup.inline_keyboard.flat().some(b => /Подключить PDF/.test(b.text)));
   const pdfButton = await start();
   assert.match(pdfButton.text, /PDF.*299/);
   await purchase(pdfButton, 'pdf', '299.00');
   assert.ok((await registry.regGet(42)).pdfUntil > Date.now());
   assert.ok(messages.some((m) => m.chat_id === 42 && m.text.includes('PDF-выпискам продлён на 30 дней')));
+  assert.ok(messages.find((m) => m.chat_id === 42 && m.text.includes('PDF-выпискам продлён на 30 дней')).reply_markup.inline_keyboard.flat().some(b => /Продлить PDF/.test(b.text)));
+});
+
+test('all PDF plans bind the server price and duration, preserve unused time and reject duplicate extension', async () => {
+  const registry = registryForTest();
+  let until = Date.now() + 20 * 864e5;
+  await registry.regUpdate(42, { paid: true, roboLifetime: true, pdfUntil: until });
+  for (const [months, price, days] of [[1, 299, 30], [3, 900, 90], [6, 1800, 180], [12, 3600, 360]]) {
+    const id = 'plan-' + months;
+    await registry.openCheckout(id);
+    await registry.linkCheckout(id, 42);
+    assert.equal(await registry.createRoboOrder(id, '1.00', false, 'pdf', months), null);
+    const order = await registry.createRoboOrder(id, price.toFixed(2), false, 'pdf', months);
+    assert.equal((await registry.confirmRoboOrder(order.inv, price.toFixed(2), false)).status, 'pdf_confirmed');
+    until += days * 864e5;
+    assert.equal((await registry.regGet(42)).pdfUntil, until);
+    assert.equal(await registry.confirmRoboOrder(order.inv, price.toFixed(2), false), 'duplicate');
+    assert.equal((await registry.regGet(42)).pdfUntil, until);
+  }
+  await registry.openCheckout('invalid'); await registry.linkCheckout('invalid', 42);
+  assert.equal(await registry.createRoboOrder('invalid', '299.00', false, 'pdf', 2), null);
+  assert.equal(await registry.createRoboOrder('invalid', '299.00', false, 'pdf', '__proto__'), null);
+});
+
+test('checkout signs selected PDF duration and ignores client prices; gifted PDF is never sold again', async (t) => {
+  const registry = registryForTest();
+  await registry.regUpdate(42, { paid: true, roboLifetime: true });
+  const env = {
+    BOT_TOKEN: 'test-only', ROBO_LOGIN: 'test-store', ROBO_LIVE_PASS1: 'one', ROBO_LIVE_PASS2: 'two', ROBO_LIVE: '1',
+    ROBO_MD5: value => createHash('md5').update(value).digest('hex'), USERS: { idFromName: name => name, get: () => registry },
+  };
+  const secret = 'a'.repeat(64), id = createHash('sha256').update(secret).digest('hex').slice(0, 48);
+  await registry.openCheckout(id); await registry.linkCheckout(id, 42);
+  const origin = 'https://konverty.example', headers = { origin, cookie: '__Host-konverty_checkout=' + secret };
+  const request = months => worker.fetch(new Request(origin + '/checkout', { method: 'POST', headers, body: new URLSearchParams({ product: 'pdf', offer: 'yes', months, price: '1' }) }), env);
+  assert.equal((await request('2')).status, 400);
+  const url = new URL((await request('6')).headers.get('location'));
+  assert.equal(url.searchParams.get('OutSum'), '1800.00');
+  const receipt = url.searchParams.get('Receipt');
+  const item = JSON.parse(decodeURIComponent(receipt)).items[0];
+  assert.equal(item.sum, 1800);
+  assert.match(item.name, /180 дней/);
+  assert.equal(url.searchParams.get('SignatureValue'), env.ROBO_MD5('test-store:1800.00:' + url.searchParams.get('InvId') + ':' + receipt + ':one'));
+  await registry.regUpdate(43, { gift: true });
+  await registry.openCheckout('gift'); await registry.linkCheckout('gift', 43);
+  assert.equal(await registry.checkoutStatus('gift'), 'included');
+  assert.equal(await registry.createRoboOrder('gift', '299.00', false, 'pdf'), null);
 });

@@ -571,7 +571,7 @@ html.web body{overflow:hidden}
   <h2>Как купить</h2>
   <ol class="ld-steps">
    <li>Открой <a href="/checkout">полный доступ</a> и подтверди аккаунт в Telegram кнопкой на странице.</li>
-   <li>Вернись на сайт и перейди к оплате через Robokassa. После покупки полного доступа здесь же можно подключить PDF-выписки за 299 ₽ на 30 дней.</li>
+   <li>Вернись на сайт и перейди к оплате через Robokassa. После покупки полного доступа можно подключить PDF: 1 месяц (30 дней) — 299 ₽, 3 месяца (90 дней) — 900 ₽, 6 месяцев (180 дней) — 1 800 ₽, 12 месяцев (360 дней) — 3 600 ₽. Продление вручную, оставшиеся дни сохраняются.</li>
    <li>На странице Robokassa выбери карту или СБП. После подтверждения платежа бот сообщит об открытии доступа. Чек придёт по контактам, указанным при оплате.</li>
    <li>Передумал в течение 14 дней — напиши «поддержка», вернём деньги полностью.</li>
   </ol>
@@ -1345,7 +1345,7 @@ function renderAccess(){
   const pdfStatus=A.pdfUntil>Date.now()?`PDF оплачен до ${new Date(A.pdfUntil).toLocaleDateString('ru-RU')}.`:A.pdf?'PDF доступен.':'PDF — 299 ₽ за 30 дней.';
   $('accTxt').textContent=(A.paid?'Полный доступ открыт: текст, голос и ИИ-повар. ':!accessExpired()?`Текст и PDF бесплатно до ${new Date(A.trialEnd).toLocaleString('ru-RU')}. Затем полный доступ — ${A.price||990} ₽ одним платежом. `:'Три бесплатных дня закончились. Новые записи доступны после оплаты. Сохранённые данные можно посмотреть и выгрузить. ')+pdfStatus;
   $('accBadge').textContent=A.paid?'💎 Полный':!accessExpired()?'🎁 Пробные 3 дня':'Нужна оплата';
-  $('accPay').hidden=false;$('accPay').textContent=A.paid?'PDF · 299 ₽ на 30 дней':`Открыть полный доступ · ${A.price||990} ₽`;
+  $('accPay').hidden=!!A.pdfFree;$('accPay').textContent=A.paid?(A.pdfUntil>Date.now()?'Продлить PDF · выбрать срок':'Подключить PDF · от 299 ₽'):`Открыть полный доступ · ${A.price||990} ₽`;
   const others=(A.members||[]).filter(m=>m.id!==A.me);
   if(A.isOwner&&!others.length)$('teamBody').innerHTML=`<p class="hint">Пригласи партнёра, и вы будете вести один бюджет на двоих. Каждый пишет траты своему боту, всё сходится здесь.</p><button type="button" class="btn" id="tmInv">💌 Пригласить партнёра</button><div id="tmLink"></div>`;
   else if(A.isOwner)$('teamBody').innerHTML=`<p>👫 Вместе с: <b>${others.map(m=>esc(m.name||'партнёр')).join(', ')}</b></p><button type="button" class="btn danger" id="tmRm" data-id="${others[0].id}">Убрать из бюджета</button>`;
