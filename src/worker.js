@@ -86,6 +86,17 @@ export class UserStore extends DurableObject {
     await this.ctx.storage.put('checkout:' + id, { expires: Date.now() + CHECKOUT_TTL, uid, preview: true });
     return true;
   }
+  async openCheckoutPurchase(id, uid) {
+    await this.ctx.storage.put('checkout:' + id, { expires: Date.now() + 7 * 864e5, uid, purchase: true });
+  }
+  async redeemCheckoutPurchase(id, browserId) {
+    const storage = this.ctx.storage;
+    const key = 'checkout:' + id;
+    const session = await storage.get(key);
+    if (!session?.purchase || session.redeemed || session.used || session.expires <= Date.now()) return false;
+    await storage.put({ [key]: { expires: session.expires, used: true }, ['checkout:' + browserId]: { ...session, expires: Date.now() + CHECKOUT_TTL, redeemed: true } });
+    return true;
+  }
   async redeemCheckoutPreview(id, browserId) {
     const storage = this.ctx.storage;
     const key = 'checkout:' + id;
@@ -99,7 +110,7 @@ export class UserStore extends DurableObject {
     const key = 'checkout:' + id;
     const storage = this.ctx.storage;
     const session = await storage.get(key);
-    if (!session || session.preview || session.expires <= Date.now() || session.used || (session.uid && session.uid !== uid)) return false;
+    if (!session || session.preview || session.purchase || session.expires <= Date.now() || session.used || (session.uid && session.uid !== uid)) return false;
     if (!session.uid) await storage.put(key, { ...session, uid });
     return true;
   }
@@ -1300,8 +1311,8 @@ async function accessOf(env, owner) {
   return { paid, active: true, trialEnd: te, pdfUntil, pdf: (paid && !u?.roboLifetime) || Date.now() < Math.max(te, pdfUntil) };
 }
 /* ---------- оплата картой через Robokassa (самозанятый, чеки в «Мой налог» автоматически) ---------- */
-// This rollout permits only test payments until the payment flow is verified.
-const ROBO_LIVE_RELEASE = false;
+// Live checkout additionally requires an explicit server flag and separate live keys.
+const ROBO_LIVE_RELEASE = true;
 const CHECKOUT_TTL = 10 * 60 * 1000;
 const CHECKOUT_COOKIE = '__Host-konverty_checkout';
 const checkoutCookie = (request) => (request.headers.get('cookie') || '')
@@ -1340,7 +1351,9 @@ function checkoutPage({ enabled, test, product, link, price }) {
 <footer><a href="/privacy">Политика обработки данных</a></footer>
 </main></body></html>`;
 }
-const roboConfigured = (env) => (env.ROBO_TEST === '1' || (ROBO_LIVE_RELEASE && env.ROBO_LIVE === '1')) && !!(env.ROBO_LOGIN && env.ROBO_PASS1 && env.ROBO_PASS2);
+const roboPass1 = (env) => env.ROBO_TEST === '1' ? env.ROBO_PASS1 : env.ROBO_LIVE_PASS1;
+const roboPass2 = (env) => env.ROBO_TEST === '1' ? env.ROBO_PASS2 : env.ROBO_LIVE_PASS2;
+const roboConfigured = (env) => (env.ROBO_TEST === '1' || (ROBO_LIVE_RELEASE && env.ROBO_LIVE === '1')) && !!(env.ROBO_LOGIN && roboPass1(env) && roboPass2(env));
 const payOn = (env) => env.ROBO_TEST !== '1' && roboConfigured(env);
 const priceRub = (env) => Math.max(1, parseInt(env.PRICE_RUB || '990', 10) || 990);
 const PDF_PRICE = 299;
@@ -1349,13 +1362,28 @@ async function roboMd5(env, value) {
   return hex(await crypto.subtle.digest('MD5', new TextEncoder().encode(value)));
 }
 async function payLink(env, { inv }, sum, product) {
-  const sig = await roboMd5(env, `${env.ROBO_LOGIN}:${sum}:${inv}:${env.ROBO_PASS1}`);
+  const receipt = encodeURIComponent(JSON.stringify({ items: [{
+    name: product === 'pdf' ? 'Бюджет в конвертах: распознавание PDF-выписок, 30 дней' : 'Бюджет в конвертах: голосовые траты и ИИ-повар, полный доступ',
+    quantity: 1, sum: Number(sum), tax: 'none', payment_method: 'full_payment', payment_object: 'service',
+  }] }));
+  const sig = await roboMd5(env, `${env.ROBO_LOGIN}:${sum}:${inv}:${receipt}:${roboPass1(env)}`);
   const q = new URLSearchParams({ MerchantLogin: env.ROBO_LOGIN, OutSum: sum, InvId: String(inv), Description: product === 'pdf' ? 'Бюджет в конвертах — PDF-выписки на 30 дней' : 'Бюджет в конвертах — голос и ИИ-повар', SignatureValue: sig, Culture: 'ru' });
+  q.set('Receipt', receipt);
   if (env.ROBO_TEST === '1') q.set('IsTest', '1');
   return 'https://auth.robokassa.ru/Merchant/Index.aspx?' + q.toString();
 }
-async function payButtons() {
-  return { inline_keyboard: [[{ text: '📄 Условия и возврат', url: 'https://konverty.app/offer' }]] };
+async function payButtons(env, owner) {
+  const rows = [];
+  if (payOn(env)) {
+    const reg = store(env, '__registry__');
+    const secret = newCheckoutSecret();
+    await reg.openCheckoutPurchase(await checkoutId(secret), owner);
+    const account = await reg.regGet(owner);
+    const full = account?.paid || owner === await reg.getAdmin();
+    rows.push([{ text: full ? '📄 PDF-выписки · 299 ₽ / 30 дней' : '💎 Полный доступ · ' + priceRub(env) + ' ₽', url: (env.ORIGIN || 'https://konverty.app').replace(/\/$/, '') + '/checkout/open/' + secret }]);
+  }
+  rows.push([{ text: '📄 Условия и возврат', url: 'https://konverty.app/offer' }]);
+  return { inline_keyboard: rows };
 }
 // Реквизиты для оферты/сайта: задаются переменными LEGAL_* в Cloudflare
 const legal = (env) => ({
@@ -1366,7 +1394,7 @@ const PAY_SOON ='💳 Готовим оплату в рублях через Rob
 const priceStars = (env) => Math.max(1, parseInt(env.PRICE_STARS || '600', 10) || 600);
 const invoiceBody = (env, owner) => ({ title: 'Бюджет в конвертах — навсегда', description: 'Полный доступ к боту и приложению без ограничений: траты, конверты, ИИ-повар, напоминания, общий бюджет на двоих.', payload: 'full:' + owner, currency: 'XTR', prices: [{ label: 'Полный доступ', amount: priceStars(env) }], provider_token: '' });
 async function chefLocked(env, chat, owner) {
-  const head = '👨‍🍳 ИИ-повар есть только в полной версии: меню на неделю под твой бюджет, список покупок и цена корзины.\n\nВсё остальное в пробном периоде работает.';
+  const head = '👨‍🍳 ИИ-повар входит в полный доступ вместе с голосовыми тратами. Текстовый бюджет остаётся бесплатным.';
   if (!payOn(env)) { await tg(env, 'sendMessage', { chat_id: chat, text: head + '\n\n' + PAY_SOON }); return; }
   await tg(env, 'sendMessage', { chat_id: chat, text: head + ` Полный доступ навсегда — ${priceRub(env)} ₽, один раз, без подписки 👇`, reply_markup: await payButtons(env, owner) });
 }
@@ -1649,7 +1677,15 @@ async function onUpdate(update, env, origin) {
   }
   const pdfDoc = msg.document && (/pdf/i.test(msg.document.mime_type || '') || /\.pdf$/i.test(msg.document.file_name || '')) ? msg.document : null;
   if (pdfDoc) {
-    if (payOn(env) && !(await accessOf(env, st.owner)).pdf) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Пробный доступ к PDF закончился. PDF-выписки стоят 299 ₽ за 30 дней. Траты по-прежнему можно записывать текстом бесплатно.' }); return; }
+    if (payOn(env)) {
+      const access = await accessOf(env, st.owner);
+      if (!access.pdf) {
+        await tg(env, 'sendMessage', { chat_id: chat, text: access.paid
+          ? 'Пробный доступ к PDF закончился. PDF-выписки — 299 ₽ за 30 дней, продление вручную. Текстовый бюджет бесплатный.'
+          : 'Пробный доступ к PDF закончился. Сначала можно открыть полный доступ за 990 ₽ одним платежом, затем подключить PDF-выписки за 299 ₽ на 30 дней. Текстовый бюджет бесплатный.', reply_markup: await payButtons(env, st.owner) });
+        return;
+      }
+    }
     if (!await hasAiConsent(env, uid)) { await requestAiConsent(env, chat); return; }
     const state = (await st.getState()) || {};
     if (!env.AI) { await tg(env, 'sendMessage', { chat_id: chat, text: 'PDF пока не читаю. Пришли скрин истории операций.' }); return; }
@@ -1705,7 +1741,7 @@ async function onUpdate(update, env, origin) {
     return;
   }
   if (!text && (msg.voice || msg.audio)) {
-    if (payOn(env) && !(await accessOf(env, st.owner)).paid) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Голосовые траты входят в «Полный доступ» за 990 ₽ одним платежом. Ту же трату можно записать текстом бесплатно.' }); return; }
+    if (payOn(env) && !(await accessOf(env, st.owner)).paid) { await tg(env, 'sendMessage', { chat_id: chat, text: 'Голосовые траты входят в «Полный доступ» за 990 ₽ одним платежом. Ту же трату можно записать текстом бесплатно.', reply_markup: await payButtons(env, st.owner) }); return; }
     if (!await hasAiConsent(env, uid)) { await requestAiConsent(env, chat); return; }
     const heard = await transcribe(env, (msg.voice || msg.audio).file_id);
     if (!heard) { const why = voiceErr && (await store(env, '__registry__').getAdmin()) === uid ? '\n\n(админу) причина: ' + voiceErr : ''; await tg(env, 'sendMessage', { chat_id: chat, text: '🎤 Не смог разобрать голосовое. Скажи ещё раз чуть чётче или напиши текстом: «кофе 300».' + why }); return; }
@@ -1788,6 +1824,7 @@ async function onUpdate(update, env, origin) {
     const trial = !access.paid && Date.now() < access.trialEnd;
     const welcomeButton = trial ? 'Попробовать бесплатно' : '📊 Открыть бюджет';
     const welcomeKeyboard = appButton(origin, welcomeButton);
+    if (payOn(env)) welcomeKeyboard.inline_keyboard.push(...(await payButtons(env, st.owner)).inline_keyboard.slice(0, 1));
     if (env.ROBO_TEST === '1' && roboConfigured(env) && uid === await reg.getAdmin()) {
       const secret = newCheckoutSecret();
       if (await reg.openCheckoutPreview(await checkoutId(secret), uid)) {
@@ -2068,6 +2105,17 @@ export default {
       );
     }
 
+    const purchase = url.pathname.match(/^\/checkout\/open\/([a-f0-9]{64})$/);
+    if (purchase && request.method === 'GET') {
+      const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
+      if (payOn(env)) {
+        const secret = newCheckoutSecret();
+        if (await store(env, '__registry__').redeemCheckoutPurchase(await checkoutId(purchase[1]), await checkoutId(secret))) {
+          return new Response(null, { status: 303, headers: { ...headers, location: '/checkout', 'set-cookie': checkoutSetCookie(secret) } });
+        }
+      }
+      return new Response('Ссылка устарела. Открой бота и нажми /start, чтобы получить новую кнопку оплаты.', { status: 404, headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' } });
+    }
     const preview = url.pathname.match(/^\/checkout\/preview\/([a-f0-9]{64})$/);
     if (preview && request.method === 'GET') {
       const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
@@ -2125,7 +2173,7 @@ export default {
       const f = request.method === 'POST' ? await request.formData().catch(() => null) : null;
       const g = (k) => (f && f.get(k)) || url.searchParams.get(k) || '';
       const out = g('OutSum'), inv = g('InvId'), sig = g('SignatureValue');
-      const ok = sig && (await roboMd5(env, `${out}:${inv}:${env.ROBO_PASS2}`)).toLowerCase() === sig.toLowerCase();
+      const ok = sig && (await roboMd5(env, `${out}:${inv}:${roboPass2(env)}`)).toLowerCase() === sig.toLowerCase();
       if (!ok || !/^\d+$/.test(inv)) return new Response('bad sign', { status: 400 });
       if (!/^\d+(?:\.\d{1,6})?$/.test(out) || !Number.isFinite(Number(out)) || Number(out) !== Number(Number(out).toFixed(2))) return new Response('bad amount', { status: 400 });
       const reg = store(env, '__registry__');

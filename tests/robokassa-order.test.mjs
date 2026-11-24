@@ -22,7 +22,6 @@ test('website checkout confirms the browser in Telegram and exposes only the app
     ROBO_LOGIN: 'test-store',
     ROBO_PASS1: 'test-one',
     ROBO_PASS2: 'test-two',
-    ROBO_LIVE: '1',
     ROBO_MD5: (value) => createHash('md5').update(value).digest('hex'),
     USERS: { idFromName: (name) => name, get: () => registry },
   };
@@ -58,6 +57,12 @@ test('website checkout confirms the browser in Telegram and exposes only the app
   assert.equal(payment.origin, 'https://auth.robokassa.ru');
   assert.equal(payment.searchParams.get('IsTest'), '1');
   assert.equal(payment.searchParams.get('OutSum'), '990.00');
+  const receipt = payment.searchParams.get('Receipt');
+  const item = JSON.parse(decodeURIComponent(receipt)).items[0];
+  assert.equal(item.sum, 990);
+  assert.equal(item.tax, 'none');
+  assert.equal(item.payment_object, 'service');
+  assert.equal(payment.searchParams.get('SignatureValue'), env.ROBO_MD5(`test-store:990.00:${payment.searchParams.get('InvId')}:${receipt}:test-one`));
   assert.equal(payment.searchParams.has('Shp_uid'), false);
   assert.equal((await submit('full')).headers.get('location'), checkout);
   const inv = payment.searchParams.get('InvId');
@@ -211,4 +216,66 @@ test('payment notice lease prevents concurrent delivery and recovers after an in
   await registry.finishRoboNotice(order.inv, retry.lease, true);
   assert.equal(await registry.claimRoboNotice(order.inv), null);
   assert.equal((await registry.regGet(42))?.paid, undefined);
+});
+
+test('live bot purchase opens the correct tariff, signs its receipt and grants full access before offering PDF', async (t) => {
+  const registry = registryForTest();
+  await registry.claimAdmin(99);
+  const messages = [];
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    messages.push(JSON.parse(options.body));
+    return Response.json({ ok: true });
+  });
+  const env = {
+    BOT_TOKEN: 'test-only', ROBO_LOGIN: 'test-store', ROBO_LIVE_PASS1: 'test-one', ROBO_LIVE_PASS2: 'test-two', ROBO_LIVE: '1',
+    ROBO_MD5: (value) => createHash('md5').update(value).digest('hex'),
+    USERS: { idFromName: (name) => name, get: () => registry },
+  };
+  const origin = 'https://konverty.example';
+  const start = async () => {
+    await worker.fetch(new Request(origin + '/tg', {
+      method: 'POST',
+      headers: { 'X-Telegram-Bot-Api-Secret-Token': createHash('sha256').update('wh:' + env.BOT_TOKEN).digest('hex').slice(0, 48) },
+      body: JSON.stringify({ message: { chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/start' } }),
+    }), env);
+    return messages.at(-2).reply_markup.inline_keyboard.flat().find((b) => b.url?.includes('/checkout/open/'));
+  };
+  const purchase = async (button, product, sum) => {
+    const opened = await worker.fetch(new Request(button.url), env);
+    assert.equal(opened.status, 303);
+    assert.equal((await worker.fetch(new Request(button.url), env)).status, 404);
+    const cookie = opened.headers.get('set-cookie').split(';')[0];
+    const page = await (await worker.fetch(new Request(origin + '/checkout', { headers: { cookie } }), env)).text();
+    assert.match(page, new RegExp(`name="product" value="${product}"`));
+    assert.doesNotMatch(page, /Подтвердить в Telegram|Тестовая оплата|webcode/);
+    const posted = await worker.fetch(new Request(origin + '/checkout', {
+      method: 'POST', headers: { origin, cookie }, body: new URLSearchParams({ product, offer: 'yes' }),
+    }), env);
+    const payment = new URL(posted.headers.get('location'));
+    assert.equal(payment.searchParams.has('IsTest'), false);
+    const receipt = payment.searchParams.get('Receipt');
+    const item = JSON.parse(decodeURIComponent(receipt)).items[0];
+    assert.equal(item.sum, Number(sum));
+    assert.equal(item.quantity, 1);
+    assert.match(item.name, product === 'pdf' ? /PDF.*30 дней/ : /полный доступ/);
+    const inv = payment.searchParams.get('InvId');
+    assert.equal(payment.searchParams.get('SignatureValue'), env.ROBO_MD5(`test-store:${sum}:${inv}:${receipt}:test-one`));
+    const confirm = () => worker.fetch(new Request(origin + '/pay/result', {
+      method: 'POST', body: new URLSearchParams({ InvId: inv, OutSum: sum, SignatureValue: env.ROBO_MD5(`${sum}:${inv}:test-two`) }),
+    }), env);
+    assert.equal(await (await confirm()).text(), 'OK' + inv);
+    const notices = messages.length;
+    assert.equal(await (await confirm()).text(), 'OK' + inv);
+    assert.equal(messages.length, notices);
+  };
+  const fullButton = await start();
+  assert.match(fullButton.text, /990/);
+  await purchase(fullButton, 'full', '990.00');
+  assert.equal((await registry.regGet(42)).paid, true);
+  assert.ok(messages.some((m) => m.chat_id === 42 && m.text.includes('Голосовые траты и ИИ-повар открыты')));
+  const pdfButton = await start();
+  assert.match(pdfButton.text, /PDF.*299/);
+  await purchase(pdfButton, 'pdf', '299.00');
+  assert.ok((await registry.regGet(42)).pdfUntil > Date.now());
+  assert.ok(messages.some((m) => m.chat_id === 42 && m.text.includes('PDF-выпискам продлён на 30 дней')));
 });

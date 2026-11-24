@@ -73,7 +73,7 @@ env.TG_API = process.env.TG_API || 'https://konverty-budget.cshirzad.workers.dev
 env.TG_PREFER_RELAY = true; // на VPS начинаем с рабочего ретранслятора, прямой маршрут остаётся запасным
 env.TG_WEBHOOK_URL = process.env.TG_WEBHOOK_URL || 'https://konverty-budget.cshirzad.workers.dev/tg';
 env.FAST_ACK = '1'; // процесс живёт постоянно — фоновую обработку не обрывают
-for (const k of ['BOT_TOKEN', 'CF_ACCOUNT_ID', 'CF_AI_TOKEN', 'ORIGIN', 'ROBO_LOGIN', 'ROBO_PASS1', 'ROBO_PASS2', 'ROBO_TEST', 'ROBO_LIVE']) if (process.env[k]) env[k] = process.env[k];
+for (const k of ['BOT_TOKEN', 'CF_ACCOUNT_ID', 'CF_AI_TOKEN', 'ORIGIN', 'ROBO_LOGIN', 'ROBO_PASS1', 'ROBO_PASS2', 'ROBO_LIVE_PASS1', 'ROBO_LIVE_PASS2', 'ROBO_TEST', 'ROBO_LIVE']) if (process.env[k]) env[k] = process.env[k];
 env.ROBO_MD5 = (value) => createHash('md5').update(value).digest('hex');
 
 /* Durable Objects: один объект на имя, вызовы к одному объекту идут строго по очереди (как в Cloudflare) */
